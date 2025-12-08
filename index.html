@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Infinite Random Obby</title>
+    <title>Infinite Random Obby - Custom Character</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; }
         #info {
@@ -52,7 +52,6 @@
             border-radius: 10px;
             border: 2px solid white;
         }
-        /* Simple Crosshair */
         #crosshair {
             position: absolute;
             top: 50%;
@@ -79,8 +78,10 @@
             <span style="font-size:30px">CLICK TO PLAY</span><br/><br/>
             WASD to Move<br/>
             SPACE to Jump<br/>
-            Mouse to Look<br/>
-            (Infinite Random Levels)
+            SHIFT (Hold) to Hang on Ledges<br/>
+            SPACE (While Hanging) to Wall Jump<br/>
+            (Look L/R to aim Wall Jump)<br/>
+            Scroll to Zoom<br/>
         </div>
     </div>
 
@@ -89,35 +90,52 @@
     <script>
         // --- Game Constants ---
         const PLAYER_HEIGHT = 1.6; 
-        const PLAYER_SPEED = 0.15;
-        const JUMP_FORCE = 0.35;
-        const GRAVITY = 0.015;
+        const PLAYER_SPEED_RUN = 0.22; 
+        const PLAYER_SPEED_WALK = 0.08;
+        const JUMP_FORCE = 0.55;   
+        const GRAVITY = 0.035;     
+        const CLIMB_SPEED = 0.15;
         const PI_2 = Math.PI / 2;
         
         // --- Global Variables ---
         let camera, scene, renderer;
         let playerMesh;
         let platforms = [];
-        let clock; // NEW: The Clock
+        let clock; 
         
         // Physics State
         let playerVelocity = new THREE.Vector3();
+        let momentum = new THREE.Vector3(); 
         let isGrounded = false;
+        
+        // Climbing State
+        let isClimbing = false;
+        let climbPhase = 0; 
+        let climbTimer = 0; 
+        let climbStartPos = new THREE.Vector3(); 
+        let climbTargetPos = new THREE.Vector3(); 
+        let climbNormal = new THREE.Vector3(); 
+        let airTime = 0; 
         
         // Game State
         let spawnPoint = new THREE.Vector3(0, 5, 0);
         let currentStage = 1;
-        let nextStageStart = new THREE.Vector3(0, 0, 0); // Where the next generator starts
-        let currentGeneratorZ = -10; // Track Z depth for generation
+        let nextStageStart = new THREE.Vector3(0, 0, 0); 
+        let stageDirection = new THREE.Vector3(0, 0, -1); 
         
         // Input State
         let moveForward = false;
         let moveBackward = false;
         let moveLeft = false;
         let moveRight = false;
+        let isShiftPressed = false;
+        let isSpacePressed = false;
         
         // Camera State
         let euler = new THREE.Euler(0, 0, 0, 'YXZ');
+        let cameraZoom = 6; 
+        const MIN_ZOOM = 0.1; 
+        const MAX_ZOOM = 15;
         
         // Pointer Lock
         let isLocked = false;
@@ -129,16 +147,15 @@
         animate();
 
         function init() {
-            // NEW: Initialize Clock
             clock = new THREE.Clock();
 
             // 1. Scene Setup
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x87CEEB); // Sky blue
-            scene.fog = new THREE.Fog(0x87CEEB, 20, 120);
+            scene.background = new THREE.Color(0x87CEEB); 
+            scene.fog = new THREE.Fog(0x87CEEB, 20, 150);
 
-            // 2. Camera
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            // 2. Camera (FOV 85)
+            camera = new THREE.PerspectiveCamera(85, window.innerWidth / window.innerHeight, 0.1, 1000);
             
             // 3. Renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -157,22 +174,22 @@
             dirLight.shadow.camera.right = 50;
             dirLight.shadow.camera.top = 50;
             dirLight.shadow.camera.bottom = -50;
-            // Increase shadow map size for cleaner look
             dirLight.shadow.mapSize.width = 2048;
             dirLight.shadow.mapSize.height = 2048;
             scene.add(dirLight);
 
-            // 5. Create Player (With Limbs)
+            // 5. Create Player
             createPlayer();
 
             // 6. Create Initial Level
-            createPlatform(0, 0, 0, 10, 1, 10, 0xaaaaaa, 'spawn'); // Start Pad
-            nextStageStart.set(0, 0, -5); // Start generating from here
+            createPlatform(0, 0, 0, 10, 1, 10, 0xaaaaaa, 'spawn'); 
+            nextStageStart.set(0, 0, -5); 
             generateRandomStage();
 
             // 7. Event Listeners
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
+            document.addEventListener('wheel', onScroll); 
             window.addEventListener('resize', onWindowResize);
             
             instructions.addEventListener('click', function() {
@@ -194,18 +211,18 @@
 
             const platformData = {
                 mesh: mesh,
+                box: new THREE.Box3().setFromObject(mesh), 
                 width: w,
                 height: h,
                 depth: d,
                 type: type,
-                stage: currentStage // Track which stage this belongs to
+                stage: currentStage
             };
             platforms.push(platformData);
             return mesh;
         }
 
         function generateRandomStage() {
-            // Colors
             const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
             const stageColor = colors[Math.floor(Math.random() * colors.length)];
             
@@ -213,175 +230,223 @@
             let curY = nextStageStart.y;
             let curZ = nextStageStart.z;
 
-            const obstaclesCount = 4 + Math.floor(Math.random() * 3); // 4 to 6 obstacles per stage
+            const obstaclesCount = 5 + Math.floor(Math.random() * 4); 
 
             for (let i = 0; i < obstaclesCount; i++) {
                 const r = Math.random();
+                const gap = 2.5 + Math.random() * 3.0;
                 
-                // Gap Distance logic
-                const gap = 2 + Math.random() * 3.5; // Random gap 2 to 5.5 (max jump is ~7)
+                const driftX = (Math.random() - 0.5) * 8; 
+                const driftY = (Math.random() - 0.4) * 2; 
+
                 curZ -= gap;
+                curX += driftX;
+                curY += driftY;
+                
+                if(curX > 40) curX = 40;
+                if(curX < -40) curX = -40;
 
                 if (r < 0.3) {
-                    // 1. Standard Jump Pads
+                    // Standard Pad
                     const w = 3 + Math.random() * 3;
                     const d = 3 + Math.random() * 3;
-                    // Random slight height variation
-                    curY += (Math.random() - 0.4) * 1.5; 
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
                     curZ -= d/2;
                 } 
-                else if (r < 0.6) {
-                    // 2. Lava Strips (Red Killbricks)
+                else if (r < 0.5) {
+                    // Lava Strips
                     const len = 8 + Math.random() * 6;
-                    // Base
                     createPlatform(curX, curY, curZ - len/2, 4, 1, len, 0x333333);
                     
-                    // Lava pieces - Made easier (smaller and further apart)
-                    const lavaCount = Math.floor(len / 4); // Fewer lava blocks
+                    const lavaCount = Math.floor(len / 4); 
                     for(let k=0; k<lavaCount; k++) {
-                        // Place lava on top
-                        // Increased spacing from 3 to 4, decreased depth from 1.5 to 1.0
                         const lZ = curZ - (k * 4) - 2;
                         createPlatform(curX, curY + 0.6, lZ, 3.5, 0.2, 1.0, 0xff0000, 'lava');
                     }
                     curZ -= len;
                 }
-                else if (r < 0.8) {
-                      // 3. Thin Beam (Balance)
+                else if (r < 0.7) {
+                      // Thin Beam
                       const len = 6 + Math.random() * 6;
                       curZ -= len/2;
-                      createPlatform(curX, curY, curZ, 1, 1, len, stageColor);
+                      createPlatform(curX, curY, curZ, 1.2, 1, len, stageColor);
                       curZ -= len/2;
                 }
                 else {
-                    // 4. Stepping Stones
+                    // Stepping Stones
                     const steps = 3 + Math.floor(Math.random()*3);
                     for(let s=0; s<steps; s++) {
-                        curZ -= 2.5; // Small gap
-                        curX += (Math.random() - 0.5) * 4; // Zigzag
-                        // Correct zigzag to not go too far
-                        if (curX > 10) curX = 8;
-                        if (curX < -10) curX = -8;
+                        curZ -= 2.5; 
+                        curX += (Math.random() - 0.5) * 5; 
+                        curY += (Math.random() - 0.3) * 1.5; 
                         
                         createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
                     }
                 }
             }
 
-            // End of Stage Checkpoint
+            // End Checkpoint
             curZ -= 4;
-            // Checkpoint Platform
-            // Make sure it aligns somewhat with the last position
             createPlatform(curX, curY, curZ - 3, 8, 1, 6, 0x00FF00, 'checkpoint');
             
-            // Visual Marker for Checkpoint
             const geo = new THREE.CylinderGeometry(0.5, 0.5, 5);
             const mat = new THREE.MeshBasicMaterial({color: 0xffff00});
             const pole = new THREE.Mesh(geo, mat);
             pole.position.set(curX + 3, curY + 2.5, curZ - 3);
             scene.add(pole);
 
-            // Update global start for next time
             nextStageStart.set(curX, curY, curZ - 6);
         }
 
-        // --- Player Creation (Animated) ---
+        // --- Player Creation (MODIFIED: Hourglass & Hair) ---
         function createPlayer() {
             const group = new THREE.Group();
             
-            const matHead = new THREE.MeshLambertMaterial({ color: 0xFFFF00 }); 
-            const matTorso = new THREE.MeshLambertMaterial({ color: 0x0000FF }); 
-            const matLegs = new THREE.MeshLambertMaterial({ color: 0x00FF00 }); 
+            // --- 1. Materials ---
+            const matSkin = new THREE.MeshLambertMaterial({ color: 0xFFE0BD }); // Peach
+            // Changed to a deeper blue relative to the image request
+            const matTorso = new THREE.MeshLambertMaterial({ color: 0x3366FF }); 
+            const matPants = new THREE.MeshLambertMaterial({ color: 0xF0F0E0 }); // Off White
+            // New material for fluffy hair (e.g., brown)
+            const matHair = new THREE.MeshLambertMaterial({ color: 0x5C4033 });
 
-            // Torso
-            const torso = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.5), matTorso);
-            torso.position.y = 1;
-            group.add(torso);
+            // --- 2. Torso (Hourglass Shape) ---
+            // We replace the single box torso with a group of 3 boxes stacked
+            const torsoGroup = new THREE.Group();
+            torsoGroup.position.y = 1; // Center point of the torso structure
 
-            // Head
-            const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matHead);
-            head.position.y = 1.8;
+            // Chest piece (Wider)
+            const chestGeo = new THREE.BoxGeometry(1.1, 0.4, 0.55);
+            const chest = new THREE.Mesh(chestGeo, matTorso);
+            chest.position.y = 0.3;
+            torsoGroup.add(chest);
+
+            // Waist piece (Narrower)
+            const waistGeo = new THREE.BoxGeometry(0.7, 0.3, 0.45);
+            const waist = new THREE.Mesh(waistGeo, matTorso);
+            waist.position.y = 0;
+            torsoGroup.add(waist);
+
+            // Hips piece (Wider again)
+            const hipsGeo = new THREE.BoxGeometry(1.1, 0.4, 0.55);
+            const hips = new THREE.Mesh(hipsGeo, matTorso);
+            hips.position.y = -0.3;
+            torsoGroup.add(hips);
+
+            group.add(torsoGroup);
+
+            // --- 3. Head ---
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matSkin);
+            // Positioned slightly higher to sit on the new chest piece
+            head.position.y = 1.8; 
             group.add(head);
 
-            // Split Legs for Animation
-            // Origin of rotation needs to be at the top of the leg (the hip)
-            const legGeo = new THREE.BoxGeometry(0.4, 1, 0.5);
-            // Translate geometry so pivot is at top
-            legGeo.translate(0, -0.5, 0); 
+            // --- 4. Fluffy Hair ---
+            // Create a group of small spheres attached to the head area
+            const hairGroup = new THREE.Group();
+            hairGroup.position.y = 2.1; // On top of head
 
-            const legL = new THREE.Mesh(legGeo, matLegs);
-            legL.position.set(-0.25, 0.5, 0); // Hip position
+            const hair PuffGeo = new THREE.SphereGeometry(0.2, 8, 8); // Low poly spheres
+            
+            // Central puff
+            hairGroup.add(new THREE.Mesh(hairPuffGeo, matHair));
+
+            // Add several random puffs around the center for fluffiness
+            for(let i=0; i<14; i++) {
+                 const puff = new THREE.Mesh(hairPuffGeo, matHair);
+                 puff.position.set(
+                     (Math.random() - 0.5) * 0.5, // spread x
+                     (Math.random() * 0.3),       // spread y up
+                     (Math.random() - 0.5) * 0.5  // spread z
+                 );
+                 // random slight scaling
+                 const s = 0.8 + Math.random() * 0.4;
+                 puff.scale.set(s,s,s);
+                 hairGroup.add(puff);
+            }
+            group.add(hairGroup);
+
+            // --- 5. Limbs (Standard) ---
+            const legGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
+            legGeo.translate(0, -0.5, 0); // Pivot at Hip
+            
+            // Left Leg
+            const legL = new THREE.Mesh(legGeo, matPants);
+            legL.position.set(-0.25, 0.5, 0); 
             group.add(legL);
 
-            const legR = new THREE.Mesh(legGeo, matLegs);
-            legR.position.set(0.25, 0.5, 0); // Hip position
+            // Right Leg
+            const legR = new THREE.Mesh(legGeo, matPants);
+            legR.position.set(0.25, 0.5, 0); 
             group.add(legR);
 
-            // Arms (Pivot at shoulder)
-            const armGeo = new THREE.BoxGeometry(0.3, 1, 0.3);
-            armGeo.translate(0, -0.4, 0); // Pivot near top
+            const armGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
+            armGeo.translate(0, -0.5, 0); // Pivot at Shoulder
 
-            const armL = new THREE.Mesh(armGeo, matHead);
-            armL.position.set(-0.75, 1.4, 0); // Shoulder pos
+            // Left Arm
+            const armL = new THREE.Mesh(armGeo, matTorso); 
+            armL.position.set(-0.75, 1.5, 0); 
+            armL.rotation.z = 0.1;
             group.add(armL);
 
-            const armR = new THREE.Mesh(armGeo, matHead);
-            armR.position.set(0.75, 1.4, 0); // Shoulder pos
+            // Right Arm
+            const armR = new THREE.Mesh(armGeo, matTorso); 
+            armR.position.set(0.75, 1.5, 0); 
+            armR.rotation.z = -0.1;
             group.add(armR);
 
+            // Finalize
             group.position.copy(spawnPoint);
             group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
 
             scene.add(group);
             playerMesh = group;
             
-            // Save references for animation
-            playerMesh.userData = {
-                legL: legL,
-                legR: legR,
-                armL: armL,
-                armR: armR
-            };
+            playerMesh.userData = { legL, legR, armL, armR };
         }
 
         function updateAnimation(time) {
             if (!playerMesh || !playerMesh.userData) return;
             const limbs = playerMesh.userData;
 
-            if (!isGrounded) {
-                // Jump Pose
-                // Legs split slightly
-                limbs.legL.rotation.x = 0.4;
-                limbs.legR.rotation.x = -0.2;
-                // Arms up
-                limbs.armL.rotation.x = Math.PI; 
-                limbs.armR.rotation.x = Math.PI;
-                limbs.armL.rotation.z = 0.2;
-                limbs.armR.rotation.z = -0.2;
+            // Reset
+            limbs.legL.rotation.set(0,0,0);
+            limbs.legR.rotation.set(0,0,0);
+            limbs.armL.rotation.set(0,0,0);
+            limbs.armR.rotation.set(0,0,0);
+
+            // Default Tucked Arms
+            limbs.armL.rotation.z = 0.1;
+            limbs.armR.rotation.z = -0.1;
+
+            if (isClimbing) {
+                 // Climb Pose
+                 limbs.armL.rotation.x = -Math.PI; 
+                 limbs.armR.rotation.x = -Math.PI; 
+                 
+                 if (climbPhase === 1 && climbTimer > 0.1) {
+                     limbs.armL.rotation.x = -Math.PI / 2;
+                     limbs.armR.rotation.x = -Math.PI / 2;
+                 }
+                 limbs.legL.rotation.x = -0.2; 
+                 limbs.legR.rotation.x = -0.3;
+            } else if (!isGrounded && airTime > 0.15) {
+                // JUMP ANIMATION (FIXED ROTATION)
+                limbs.legL.rotation.z = -0.4;  
+                limbs.legR.rotation.z = 0.4; 
+
+                // Arms Out
+                limbs.armL.rotation.z = -0.8; 
+                limbs.armR.rotation.z = 0.8;  
             } else if (moveForward || moveBackward || moveLeft || moveRight) {
-                // Walking Animation
-                const walkSpeed = 10;
-                const angle = Math.sin(time * walkSpeed) * 0.6;
-                
+                // Walk Animation
+                const speed = isShiftPressed ? 5 : 10;
+                const angle = Math.sin(time * speed) * 0.8;
                 limbs.legL.rotation.x = -angle;
                 limbs.legR.rotation.x = angle;
-                
-                // Arms opposite to legs
                 limbs.armL.rotation.x = angle;
                 limbs.armR.rotation.x = -angle;
-                limbs.armL.rotation.z = 0;
-                limbs.armR.rotation.z = 0;
-            } else {
-                // Idle
-                // Lerp back to zero roughly
-                limbs.legL.rotation.x = 0;
-                limbs.legR.rotation.x = 0;
-                limbs.armL.rotation.x = 0;
-                limbs.armR.rotation.x = 0;
-                limbs.armL.rotation.z = 0;
-                limbs.armR.rotation.z = 0;
             }
         }
 
@@ -392,8 +457,9 @@
                 case 'ArrowLeft': case 'KeyA': moveLeft = true; break;
                 case 'ArrowDown': case 'KeyS': moveBackward = true; break;
                 case 'ArrowRight': case 'KeyD': moveRight = true; break;
+                case 'ShiftLeft': case 'ShiftRight': isShiftPressed = true; break;
                 case 'Space': 
-                    if (isGrounded) playerVelocity.y = JUMP_FORCE; 
+                    isSpacePressed = true;
                     break;
                 case 'KeyR': respawn(); break;
             }
@@ -405,7 +471,14 @@
                 case 'ArrowLeft': case 'KeyA': moveLeft = false; break;
                 case 'ArrowDown': case 'KeyS': moveBackward = false; break;
                 case 'ArrowRight': case 'KeyD': moveRight = false; break;
+                case 'ShiftLeft': case 'ShiftRight': isShiftPressed = false; break;
+                case 'Space': isSpacePressed = false; break;
             }
+        }
+
+        function onScroll(event) {
+            cameraZoom += event.deltaY * 0.01;
+            cameraZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, cameraZoom));
         }
 
         function pointerLockChange() {
@@ -417,109 +490,248 @@
                 isLocked = false;
                 blocker.style.display = 'flex';
                 crosshair.style.display = 'none';
-                moveForward = false;
-                moveBackward = false;
-                moveLeft = false;
-                moveRight = false;
+                moveForward = false; moveBackward = false; moveLeft = false; moveRight = false; isSpacePressed = false;
             }
         }
 
         function onMouseMove(event) {
             if (!isLocked) return;
-            const movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
-            const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+            const movementX = event.movementX || 0;
+            const movementY = event.movementY || 0;
             euler.y -= movementX * 0.002;
             euler.x -= movementY * 0.002;
             const limit = Math.PI / 2 - 0.1;
             euler.x = Math.max(-limit, Math.min(limit, euler.x));
         }
 
-        // --- Physics & Game Loop ---
+        // --- Physics Loop ---
         function respawn() {
             playerMesh.position.copy(spawnPoint);
             playerVelocity.set(0, 0, 0);
-            
-            // Safety: if we fell below the map, reset velocity again
+            momentum.set(0, 0, 0);
             if (playerMesh.position.y < -100) playerVelocity.set(0,0,0);
         }
 
-        function checkCollisions() {
-            isGrounded = false;
-            const feetY = playerMesh.position.y - 0.5; 
+        function startClimb(p, halfW, halfD, radius, topY) {
+            isClimbing = true;
+            climbPhase = 0; // Start in Hang phase
+            climbTimer = 0;
+            playerVelocity.set(0, 0, 0);
+            momentum.set(0, 0, 0);
+
+            const pPos = p.mesh.position;
+            const px = playerMesh.position.x;
+            const pz = playerMesh.position.z;
             
-            const feetPos = new THREE.Vector3(playerMesh.position.x, playerMesh.position.y - 0.5, playerMesh.position.z);
+            // Distances to faces
+            const dx1 = (px - (pPos.x - halfW)); // Left face
+            const dx2 = (px - (pPos.x + halfW)); // Right face
+            const dz1 = (pz - (pPos.z - halfD)); // Back face
+            const dz2 = (pz - (pPos.z + halfD)); // Front face
+            
+            const adx1 = Math.abs(dx1);
+            const adx2 = Math.abs(dx2);
+            const adz1 = Math.abs(dz1);
+            const adz2 = Math.abs(dz2);
+            
+            const min = Math.min(adx1, adx2, adz1, adz2);
+            
+            // Hang Position: Shoulders at topY level.
+            const hangY = topY - 1.2; 
+            const endY = topY + 0.5;
+
+            // Set Start Pos (Snapped to wall)
+            climbStartPos.set(px, hangY, pz);
+            climbTargetPos.set(px, endY, pz);
+
+            const pushIn = 0.5; 
+            
+            if (min === adx1) {
+                climbStartPos.x = pPos.x - halfW - radius;
+                climbTargetPos.x = pPos.x - halfW + pushIn;
+                climbNormal.set(-1, 0, 0); // Wall Normal is Left
+            } else if (min === adx2) {
+                climbStartPos.x = pPos.x + halfW + radius;
+                climbTargetPos.x = pPos.x + halfW - pushIn;
+                climbNormal.set(1, 0, 0);
+            } else if (min === adz1) {
+                climbStartPos.z = pPos.z - halfD - radius;
+                climbTargetPos.z = pPos.z - halfD + pushIn;
+                climbNormal.set(0, 0, -1);
+            } else if (min === adz2) {
+                climbStartPos.z = pPos.z + halfD + radius;
+                climbTargetPos.z = pPos.z + halfD - pushIn;
+                climbNormal.set(0, 0, 1);
+            }
+            
+            playerMesh.position.copy(climbStartPos);
+        }
+
+        function checkPhysics(dt) {
+            // Climbing Physics
+            if (isClimbing) {
+                if (climbPhase === 0) {
+                    // --- PHASE 0: HANGING ---
+                    playerMesh.position.copy(climbStartPos); // Stick to wall
+                    
+                    // 1. Wall Jump Logic
+                    if (isSpacePressed) {
+                        isClimbing = false;
+                        isGrounded = false;
+                        airTime = 0.2; // Small cooldown
+                        playerVelocity.y = JUMP_FORCE * 1.1; 
+                        
+                        // Directional Jump Calculation
+                        const normalAngle = Math.atan2(climbNormal.x, climbNormal.z);
+                        // Camera direction (projected XZ)
+                        const camAngle = Math.atan2(-Math.sin(euler.y), -Math.cos(euler.y));
+                        
+                        let diff = camAngle - normalAngle;
+                        // Normalize diff to -PI to PI
+                        while (diff > Math.PI) diff -= Math.PI * 2;
+                        while (diff < -Math.PI) diff += Math.PI * 2;
+                        
+                        // Clamp to +/- 30 degrees (approx 0.52 rad)
+                        const limit = Math.PI / 6;
+                        diff = Math.max(-limit, Math.min(limit, diff));
+                        
+                        const finalAngle = normalAngle + diff;
+                        
+                        // Apply momentum based on final angle
+                        momentum.set(Math.sin(finalAngle), 0, Math.cos(finalAngle)).multiplyScalar(0.5); 
+                        
+                        return;
+                    }
+                    
+                    // 2. Climb Up Logic (If not holding Shift)
+                    if (!isShiftPressed) {
+                        climbPhase = 1; // Start Hoist
+                        climbTimer = 0;
+                    }
+                } 
+                else {
+                    // --- PHASE 1: HOISTING ---
+                    climbTimer += dt;
+                    if (climbTimer < 0.4) { 
+                        const t = climbTimer / 0.4;
+                        playerMesh.position.lerpVectors(climbStartPos, climbTargetPos, t);
+                    } else {
+                        playerMesh.position.copy(climbTargetPos);
+                        isClimbing = false;
+                        isGrounded = true;
+                    }
+                }
+                return;
+            }
+
+            // Standard Physics
             const playerRadius = 0.4;
-            
-            for (let i = platforms.length - 1; i >= 0; i--) {
-                const p = platforms[i];
-                // Distance cull
-                if (Math.abs(p.mesh.position.z - feetPos.z) > 10) continue;
+            let onGround = false;
+            let hitLedge = false;
+            let ledgePlatform = null; 
+
+            const nextX = playerMesh.position.x; 
+            const nextZ = playerMesh.position.z;
+            const feetY = playerMesh.position.y - 0.5;
+            const headY = playerMesh.position.y + 1.0;
+
+            for (let p of platforms) {
+                if (Math.abs(p.mesh.position.z - nextZ) > 10 && Math.abs(p.mesh.position.x - nextX) > 10) continue;
 
                 const pPos = p.mesh.position;
                 const halfW = p.width / 2;
                 const halfD = p.depth / 2;
                 const halfH = p.height / 2;
-                const topY = pPos.y + halfH;
 
-                if (Math.abs(feetPos.x - pPos.x) < halfW + playerRadius && 
-                    Math.abs(feetPos.z - pPos.z) < halfD + playerRadius) {
-                    
-                    const landingTolerance = 0.25; 
-                    
-                    if (feetPos.y >= topY - landingTolerance && 
-                        feetPos.y + playerVelocity.y <= topY + landingTolerance) {
-                        
-                        // Hit
-                        if(p.type === 'lava') {
-                            respawn();
-                            return;
-                        }
+                const minX = pPos.x - halfW - playerRadius;
+                const maxX = pPos.x + halfW + playerRadius;
+                const minZ = pPos.z - halfD - playerRadius;
+                const maxZ = pPos.z + halfD + playerRadius;
+                const minY = pPos.y - halfH;
+                const maxY = pPos.y + halfH;
 
-                        isGrounded = true;
-                        playerVelocity.y = Math.max(0, playerVelocity.y);
-                        // Snap feet to top
-                        playerMesh.position.y = topY + 0.5;
+                if (nextX > minX && nextX < maxX && nextZ > minZ && nextZ < maxZ) {
+                    if (feetY < maxY && headY > minY) {
+                        const depthIntoTop = (maxY) - feetY;
                         
-                        // Checkpoint Logic
-                        if(p.type === 'checkpoint') {
-                            if(!p.triggered) {
-                                p.triggered = true;
-                                spawnPoint.set(pPos.x, topY + 0.5 + 2, pPos.z);
-                                
-                                // Generate NEXT stage
-                                generateRandomStage();
-                                currentStage++;
-                                document.getElementById('stage-display').innerText = currentStage;
-                                
-                                const msg = document.getElementById('checkpoint-msg');
-                                msg.style.opacity = 1;
-                                setTimeout(() => { msg.style.opacity = 0; }, 2000);
+                        // Land on top
+                        if (depthIntoTop > 0 && depthIntoTop < 0.6 && playerVelocity.y <= 0.1) {
+                            onGround = true;
+                            playerMesh.position.y = maxY + 0.5;
+                            playerVelocity.y = 0;
+                            momentum.set(0,0,0); // Stop momentum on land
+                            
+                            if(p.type === 'lava') { respawn(); return; }
+                            if(p.type === 'checkpoint') triggerCheckpoint(p);
+                        } 
+                        else if (feetY < maxY - 0.1) {
+                            // Wall / Ledge Hit
+                            // FIX: Must drop at least 0.5 units down (chest height) to grab
+                            // AND must be falling (velocity < 0) to avoid grabbing on the way up
+                            if (feetY > maxY - 1.5 && feetY < maxY - 0.5 && p.type !== 'lava' && playerVelocity.y < 0) {
+                                hitLedge = true;
+                                ledgePlatform = p;
                             } else {
-                                spawnPoint.set(pPos.x, topY + 0.5 + 2, pPos.z);
+                                // Push out
+                                const dx1 = nextX - minX;
+                                const dx2 = maxX - nextX;
+                                const dz1 = nextZ - minZ;
+                                const dz2 = maxZ - nextZ;
+                                const minOverlap = Math.min(dx1, dx2, dz1, dz2);
+                                
+                                if (minOverlap === dx1) { playerMesh.position.x = minX; momentum.x = 0; }
+                                else if (minOverlap === dx2) { playerMesh.position.x = maxX; momentum.x = 0; }
+                                else if (minOverlap === dz1) { playerMesh.position.z = minZ; momentum.z = 0; }
+                                else if (minOverlap === dz2) { playerMesh.position.z = maxZ; momentum.z = 0; }
                             }
+                        }
+                    }
+                }
+                // Safety Grab (Shift Walk off Edge)
+                else if (isShiftPressed && p.type !== 'lava') {
+                    const grabDist = 0.5;
+                    if (nextX > minX - grabDist && nextX < maxX + grabDist && 
+                        nextZ > minZ - grabDist && nextZ < maxZ + grabDist) {
+                        // FIX: Must have actually fallen slightly below the surface to trigger
+                        if (feetY > maxY - 1.2 && feetY < maxY - 0.2) {
+                            hitLedge = true;
+                            ledgePlatform = p;
                         }
                     }
                 }
             }
 
-            if (playerMesh.position.y < -30) {
-                respawn();
+            isGrounded = onGround;
+
+            // Trigger Climb
+            if (!isGrounded && hitLedge && ledgePlatform && airTime > 0.1) {
+                // Calculate top Y
+                const topY = ledgePlatform.mesh.position.y + ledgePlatform.height/2;
+                startClimb(ledgePlatform, ledgePlatform.width/2, ledgePlatform.depth/2, playerRadius, topY);
+            }
+
+            if (playerMesh.position.y < -30) respawn();
+        }
+
+        function triggerCheckpoint(p) {
+            if(!p.triggered) {
+                p.triggered = true;
+                spawnPoint.set(p.mesh.position.x, p.mesh.position.y + 0.5 + 2, p.mesh.position.z);
+                generateRandomStage();
+                currentStage++;
+                document.getElementById('stage-display').innerText = currentStage;
+                const msg = document.getElementById('checkpoint-msg');
+                msg.style.opacity = 1;
+                setTimeout(() => { msg.style.opacity = 0; }, 2000);
+            } else {
+                spawnPoint.set(p.mesh.position.x, p.mesh.position.y + 0.5 + 2, p.mesh.position.z);
             }
         }
 
         function animate() {
             requestAnimationFrame(animate);
-            
-            // NEW: Delta Time Calculation
-            // This ensures movement is the same speed on 60hz, 120hz, or 240hz screens
             const dt = clock.getDelta();
-            
-            // We assume original values were tuned for 60fps.
-            // If running at 60fps, dt = 0.016. 0.016 * 60 = 1 (Normal Speed)
-            // If running at 120fps, dt = 0.008. 0.008 * 60 = 0.5 (Slows down the loop to normal)
-            // We cap it at 4 to prevent lag spikes from teleporting the player
             const timeScale = Math.min(dt * 60, 4);
-
             const time = Date.now() / 1000;
 
             if (!isLocked) {
@@ -527,17 +739,44 @@
                 return;
             }
 
-            // 1. Shift Lock Rotation
-            playerMesh.rotation.y = euler.y + Math.PI;
+            // 1. Shift Lock Rotation (Normally)
+            // While hanging (Phase 0), stay still OR align to wall. 
+            // Currently animate sets rotation every frame.
+            if (!isClimbing) {
+                playerMesh.rotation.y = euler.y + Math.PI;
+            } else if (isClimbing && climbPhase === 0) {
+                // Keep player facing wall (-climbNormal)
+                // climbNormal is (sin, 0, cos) of some angle.
+                // Atan2(x, z) gives angle.
+                // +PI to face opposite
+                playerMesh.rotation.y = Math.atan2(climbNormal.x, climbNormal.z) + Math.PI;
+            }
 
-            // 2. Physics
-            if (!isGrounded) {
-                // Apply Gravity adjusted by TimeScale
+            // Update Air Timer
+            if (!isGrounded && !isClimbing) {
+                airTime += dt;
+            } else {
+                airTime = 0;
+            }
+
+            // 2. Physics: Gravity
+            if (!isGrounded && !isClimbing) {
                 playerVelocity.y -= GRAVITY * timeScale;
             }
 
+            // NEW JUMP LOGIC: Continuous check
+            if (isGrounded && isSpacePressed) {
+                playerVelocity.y = JUMP_FORCE;
+                isGrounded = false;
+            }
+
             // 3. Movement
-            const speed = PLAYER_SPEED;
+            // Disable movement input while climbing
+            let currentSpeed = 0;
+            if (!isClimbing) {
+                currentSpeed = isShiftPressed ? PLAYER_SPEED_WALK : PLAYER_SPEED_RUN;
+            }
+            
             const yaw = euler.y;
             const fwdX = -Math.sin(yaw);
             const fwdZ = -Math.cos(yaw);
@@ -547,33 +786,51 @@
             let moveX = 0;
             let moveZ = 0;
 
-            if (moveForward) { moveX += fwdX; moveZ += fwdZ; }
-            if (moveBackward) { moveX -= fwdX; moveZ -= fwdZ; }
-            if (moveLeft) { moveX -= rightX; moveZ -= rightZ; }
-            if (moveRight) { moveX += rightX; moveZ += rightZ; }
+            if (!isClimbing) {
+                if (moveForward) { moveX += fwdX; moveZ += fwdZ; }
+                if (moveBackward) { moveX -= fwdX; moveZ -= fwdZ; }
+                if (moveLeft) { moveX -= rightX; moveZ -= rightZ; }
+                if (moveRight) { moveX += rightX; moveZ += rightZ; }
+            }
 
             if (moveX !== 0 || moveZ !== 0) {
                 const len = Math.sqrt(moveX*moveX + moveZ*moveZ);
-                // Apply TimeScale to movement Speed
-                moveX = (moveX / len) * speed * timeScale;
-                moveZ = (moveZ / len) * speed * timeScale;
+                moveX = (moveX / len) * currentSpeed * timeScale;
+                moveZ = (moveZ / len) * currentSpeed * timeScale;
                 
                 playerMesh.position.x += moveX;
                 playerMesh.position.z += moveZ;
             }
 
-            // Apply TimeScale to vertical velocity
-            playerMesh.position.y += playerVelocity.y * timeScale;
+            // Apply Momentum
+            playerMesh.position.add(momentum);
+            momentum.multiplyScalar(0.94); // Decay momentum
 
-            // 4. Collision
-            checkCollisions();
+            if (!isClimbing) playerMesh.position.y += playerVelocity.y * timeScale;
+
+            // 4. Collision & Correction
+            checkPhysics(dt);
 
             // 5. Animation
             updateAnimation(time);
 
             // 6. Camera
             camera.quaternion.setFromEuler(euler);
-            const camOffset = new THREE.Vector3(1.5, 2, 5);
+            
+            let zDist = cameraZoom;
+            let yDist = Math.max(0, cameraZoom * 0.4); 
+            let xOffset = 1.5;
+            
+            if (cameraZoom < 1.0) {
+                xOffset = 0;
+                yDist = 0; 
+                zDist = -0.2; 
+                playerMesh.visible = false; 
+            } else {
+                playerMesh.visible = true;
+            }
+            
+            const camOffset = new THREE.Vector3(xOffset, 2 + yDist, zDist);
             camOffset.applyEuler(euler);
             camera.position.copy(playerMesh.position).add(camOffset);
 
@@ -589,3 +846,126 @@
     </script>
 </body>
 </html>
+
+---
+
+### Instructions for another Gemini chat:
+
+Here is a summary of the changes made to the `createPlayer` function to achieve the hourglass torso and fluffy hair aesthetic.
+
+**Changes Made:**
+
+1.  **Materials:** The `matTorso` color was changed from light blue (`0xADD8E6`) to a deeper blue (`0x3366FF`). A new material, `matHair` (brown: `0x5C4033`), was created for the hair.
+2.  **Torso Redesign:** The single box torso was replaced with a `THREE.Group` called `torsoGroup`. Inside this group, three separate box meshes of varying widths were stacked vertically to create the hourglass shape (Chest: wide, Waist: narrow, Hips: wide).
+3.  **Fluffy Hair:** A new `THREE.Group` called `hairGroup` was created and placed on top of the head. Inside this group, roughly 15 small `THREE.SphereGeometry` meshes were generated with slight random position offsets to create a "clumped" fluffy look.
+4.  **Repositioning:** The head mesh was moved slightly upwards to sit correctly on the new, slightly taller torso structure.
+
+**The new `createPlayer` code snippet:**
+
+```javascript
+// --- Player Creation (MODIFIED: Hourglass & Hair) ---
+function createPlayer() {
+    const group = new THREE.Group();
+    
+    // --- 1. Materials ---
+    const matSkin = new THREE.MeshLambertMaterial({ color: 0xFFE0BD }); // Peach
+    // Changed to a deeper blue relative to the image request
+    const matTorso = new THREE.MeshLambertMaterial({ color: 0x3366FF }); 
+    const matPants = new THREE.MeshLambertMaterial({ color: 0xF0F0E0 }); // Off White
+    // New material for fluffy hair (e.g., brown)
+    const matHair = new THREE.MeshLambertMaterial({ color: 0x5C4033 });
+
+    // --- 2. Torso (Hourglass Shape) ---
+    // We replace the single box torso with a group of 3 boxes stacked
+    const torsoGroup = new THREE.Group();
+    torsoGroup.position.y = 1; // Center point of the torso structure
+
+    // Chest piece (Wider)
+    const chestGeo = new THREE.BoxGeometry(1.1, 0.4, 0.55);
+    const chest = new THREE.Mesh(chestGeo, matTorso);
+    chest.position.y = 0.3;
+    torsoGroup.add(chest);
+
+    // Waist piece (Narrower)
+    const waistGeo = new THREE.BoxGeometry(0.7, 0.3, 0.45);
+    const waist = new THREE.Mesh(waistGeo, matTorso);
+    waist.position.y = 0;
+    torsoGroup.add(waist);
+
+    // Hips piece (Wider again)
+    const hipsGeo = new THREE.BoxGeometry(1.1, 0.4, 0.55);
+    const hips = new THREE.Mesh(hipsGeo, matTorso);
+    hips.position.y = -0.3;
+    torsoGroup.add(hips);
+
+    group.add(torsoGroup);
+
+    // --- 3. Head ---
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matSkin);
+    // Positioned slightly higher to sit on the new chest piece
+    head.position.y = 1.8; 
+    group.add(head);
+
+    // --- 4. Fluffy Hair ---
+    // Create a group of small spheres attached to the head area
+    const hairGroup = new THREE.Group();
+    hairGroup.position.y = 2.1; // On top of head
+
+    const hairPuffGeo = new THREE.SphereGeometry(0.2, 8, 8); // Low poly spheres
+    
+    // Central puff
+    hairGroup.add(new THREE.Mesh(hairPuffGeo, matHair));
+
+    // Add several random puffs around the center for fluffiness
+    for(let i=0; i<14; i++) {
+         const puff = new THREE.Mesh(hairPuffGeo, matHair);
+         puff.position.set(
+             (Math.random() - 0.5) * 0.5, // spread x
+             (Math.random() * 0.3),       // spread y up
+             (Math.random() - 0.5) * 0.5  // spread z
+         );
+         // random slight scaling
+         const s = 0.8 + Math.random() * 0.4;
+         puff.scale.set(s,s,s);
+         hairGroup.add(puff);
+    }
+    group.add(hairGroup);
+
+    // --- 5. Limbs (Standard) ---
+    const legGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
+    legGeo.translate(0, -0.5, 0); // Pivot at Hip
+    
+    // Left Leg
+    const legL = new THREE.Mesh(legGeo, matPants);
+    legL.position.set(-0.25, 0.5, 0); 
+    group.add(legL);
+
+    // Right Leg
+    const legR = new THREE.Mesh(legGeo, matPants);
+    legR.position.set(0.25, 0.5, 0); 
+    group.add(legR);
+
+    const armGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
+    armGeo.translate(0, -0.5, 0); // Pivot at Shoulder
+
+    // Left Arm
+    const armL = new THREE.Mesh(armGeo, matTorso); 
+    armL.position.set(-0.75, 1.5, 0); 
+    armL.rotation.z = 0.1;
+    group.add(armL);
+
+    // Right Arm
+    const armR = new THREE.Mesh(armGeo, matTorso); 
+    armR.position.set(0.75, 1.5, 0); 
+    armR.rotation.z = -0.1;
+    group.add(armR);
+
+    // Finalize
+    group.position.copy(spawnPoint);
+    group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
+
+    scene.add(group);
+    playerMesh = group;
+    
+    playerMesh.userData = { legL, legR, armL, armR };
+}
