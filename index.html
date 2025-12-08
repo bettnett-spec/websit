@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Infinite Random Obby</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 8px;
+            pointer-events: none;
+            font-weight: bold;
+            text-shadow: 1px 1px 0 #000;
+        }
+        #checkpoint-msg {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #FFFF00;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 #000;
+            opacity: 0;
+            transition: opacity 0.5s;
+            pointer-events: none;
+        }
+        
+        #blocker {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            color: white;
+            z-index: 999;
+        }
+        #instructions {
+            font-size: 24px;
+            cursor: pointer;
+            text-align: center;
+            padding: 20px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 10px;
+            border: 2px solid white;
+        }
+        /* Simple Crosshair */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border: 1px solid black;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="info">Stage: <span id="stage-display">1</span></div>
+    <div id="checkpoint-msg">CHECKPOINT! NEXT LEVEL GENERATED</div>
+    <div id="crosshair"></div>
+
+    <div id="blocker">
+        <div id="instructions">
+            <span style="font-size:30px">CLICK TO PLAY</span><br/><br/>
+            WASD to Move<br/>
+            SPACE to Jump<br/>
+            Mouse to Look<br/>
+            (Infinite Random Levels)
+        </div>
+    </div>
+
+    <!-- Three.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        // --- Game Constants ---
+        const PLAYER_HEIGHT = 1.6; 
+        const PLAYER_SPEED = 0.15;
+        const JUMP_FORCE = 0.35;
+        const GRAVITY = 0.015;
+        const PI_2 = Math.PI / 2;
+        
+        // --- Global Variables ---
+        let camera, scene, renderer;
+        let playerMesh;
+        let platforms = [];
+        
+        // Physics State
+        let playerVelocity = new THREE.Vector3();
+        let isGrounded = false;
+        
+        // Game State
+        let spawnPoint = new THREE.Vector3(0, 5, 0);
+        let currentStage = 1;
+        let nextStageStart = new THREE.Vector3(0, 0, 0); // Where the next generator starts
+        let currentGeneratorZ = -10; // Track Z depth for generation
+        
+        // Input State
+        let moveForward = false;
+        let moveBackward = false;
+        let moveLeft = false;
+        let moveRight = false;
+        
+        // Camera State
+        let euler = new THREE.Euler(0, 0, 0, 'YXZ');
+        
+        // Pointer Lock
+        let isLocked = false;
+        const blocker = document.getElementById('blocker');
+        const instructions = document.getElementById('instructions');
+        const crosshair = document.getElementById('crosshair');
+
+        init();
+        animate();
+
+        function init() {
+            // 1. Scene Setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB); // Sky blue
+            scene.fog = new THREE.Fog(0x87CEEB, 20, 120);
+
+            // 2. Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            // 3. Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // 4. Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(50, 100, 50);
+            dirLight.castShadow = true;
+            dirLight.shadow.camera.left = -50;
+            dirLight.shadow.camera.right = 50;
+            dirLight.shadow.camera.top = 50;
+            dirLight.shadow.camera.bottom = -50;
+            // Increase shadow map size for cleaner look
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            scene.add(dirLight);
+
+            // 5. Create Player (With Limbs)
+            createPlayer();
+
+            // 6. Create Initial Level
+            createPlatform(0, 0, 0, 10, 1, 10, 0xaaaaaa, 'spawn'); // Start Pad
+            nextStageStart.set(0, 0, -5); // Start generating from here
+            generateRandomStage();
+
+            // 7. Event Listeners
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+            window.addEventListener('resize', onWindowResize);
+            
+            instructions.addEventListener('click', function() {
+                document.body.requestPointerLock();
+            });
+            document.addEventListener('pointerlockchange', pointerLockChange);
+            document.addEventListener('mousemove', onMouseMove);
+        }
+
+        // --- Level Generation ---
+        function createPlatform(x, y, z, w, h, d, color, type = 'normal') {
+            const geometry = new THREE.BoxGeometry(w, h, d);
+            const material = new THREE.MeshLambertMaterial({ color: color });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+
+            const platformData = {
+                mesh: mesh,
+                width: w,
+                height: h,
+                depth: d,
+                type: type,
+                stage: currentStage // Track which stage this belongs to
+            };
+            platforms.push(platformData);
+            return mesh;
+        }
+
+        function generateRandomStage() {
+            // Colors
+            const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+            const stageColor = colors[Math.floor(Math.random() * colors.length)];
+            
+            let curX = nextStageStart.x;
+            let curY = nextStageStart.y;
+            let curZ = nextStageStart.z;
+
+            const obstaclesCount = 4 + Math.floor(Math.random() * 3); // 4 to 6 obstacles per stage
+
+            for (let i = 0; i < obstaclesCount; i++) {
+                const r = Math.random();
+                
+                // Gap Distance logic
+                const gap = 2 + Math.random() * 3.5; // Random gap 2 to 5.5 (max jump is ~7)
+                curZ -= gap;
+
+                if (r < 0.3) {
+                    // 1. Standard Jump Pads
+                    const w = 3 + Math.random() * 3;
+                    const d = 3 + Math.random() * 3;
+                    // Random slight height variation
+                    curY += (Math.random() - 0.4) * 1.5; 
+                    curZ -= d/2;
+                    createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    curZ -= d/2;
+                } 
+                else if (r < 0.6) {
+                    // 2. Lava Strips (Red Killbricks)
+                    const len = 8 + Math.random() * 6;
+                    // Base
+                    createPlatform(curX, curY, curZ - len/2, 4, 1, len, 0x333333);
+                    
+                    // Lava pieces - Made easier (smaller and further apart)
+                    const lavaCount = Math.floor(len / 4); // Fewer lava blocks
+                    for(let k=0; k<lavaCount; k++) {
+                        // Place lava on top
+                        // Increased spacing from 3 to 4, decreased depth from 1.5 to 1.0
+                        const lZ = curZ - (k * 4) - 2;
+                        createPlatform(curX, curY + 0.6, lZ, 3.5, 0.2, 1.0, 0xff0000, 'lava');
+                    }
+                    curZ -= len;
+                }
+                else if (r < 0.8) {
+                     // 3. Thin Beam (Balance)
+                     const len = 6 + Math.random() * 6;
+                     curZ -= len/2;
+                     createPlatform(curX, curY, curZ, 1, 1, len, stageColor);
+                     curZ -= len/2;
+                }
+                else {
+                    // 4. Stepping Stones
+                    const steps = 3 + Math.floor(Math.random()*3);
+                    for(let s=0; s<steps; s++) {
+                        curZ -= 2.5; // Small gap
+                        curX += (Math.random() - 0.5) * 4; // Zigzag
+                        // Correct zigzag to not go too far
+                        if (curX > 10) curX = 8;
+                        if (curX < -10) curX = -8;
+                        
+                        createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
+                    }
+                }
+            }
+
+            // End of Stage Checkpoint
+            curZ -= 4;
+            // Checkpoint Platform
+            // Make sure it aligns somewhat with the last position
+            createPlatform(curX, curY, curZ - 3, 8, 1, 6, 0x00FF00, 'checkpoint');
+            
+            // Visual Marker for Checkpoint
+            const geo = new THREE.CylinderGeometry(0.5, 0.5, 5);
+            const mat = new THREE.MeshBasicMaterial({color: 0xffff00});
+            const pole = new THREE.Mesh(geo, mat);
+            pole.position.set(curX + 3, curY + 2.5, curZ - 3);
+            scene.add(pole);
+
+            // Update global start for next time
+            nextStageStart.set(curX, curY, curZ - 6);
+        }
+
+        // --- Player Creation (Animated) ---
+        function createPlayer() {
+            const group = new THREE.Group();
+            
+            const matHead = new THREE.MeshLambertMaterial({ color: 0xFFFF00 }); 
+            const matTorso = new THREE.MeshLambertMaterial({ color: 0x0000FF }); 
+            const matLegs = new THREE.MeshLambertMaterial({ color: 0x00FF00 }); 
+
+            // Torso
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.5), matTorso);
+            torso.position.y = 1;
+            group.add(torso);
+
+            // Head
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matHead);
+            head.position.y = 1.8;
+            group.add(head);
+
+            // Split Legs for Animation
+            // Origin of rotation needs to be at the top of the leg (the hip)
+            const legGeo = new THREE.BoxGeometry(0.4, 1, 0.5);
+            // Translate geometry so pivot is at top
+            legGeo.translate(0, -0.5, 0); 
+
+            const legL = new THREE.Mesh(legGeo, matLegs);
+            legL.position.set(-0.25, 0.5, 0); // Hip position
+            group.add(legL);
+
+            const legR = new THREE.Mesh(legGeo, matLegs);
+            legR.position.set(0.25, 0.5, 0); // Hip position
+            group.add(legR);
+
+            // Arms (Pivot at shoulder)
+            const armGeo = new THREE.BoxGeometry(0.3, 1, 0.3);
+            armGeo.translate(0, -0.4, 0); // Pivot near top
+
+            const armL = new THREE.Mesh(armGeo, matHead);
+            armL.position.set(-0.75, 1.4, 0); // Shoulder pos
+            group.add(armL);
+
+            const armR = new THREE.Mesh(armGeo, matHead);
+            armR.position.set(0.75, 1.4, 0); // Shoulder pos
+            group.add(armR);
+
+            group.position.copy(spawnPoint);
+            group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
+
+            scene.add(group);
+            playerMesh = group;
+            
+            // Save references for animation
+            playerMesh.userData = {
+                legL: legL,
+                legR: legR,
+                armL: armL,
+                armR: armR
+            };
+        }
+
+        function updateAnimation(time) {
+            if (!playerMesh || !playerMesh.userData) return;
+            const limbs = playerMesh.userData;
+
+            if (!isGrounded) {
+                // Jump Pose
+                // Legs split slightly
+                limbs.legL.rotation.x = 0.4;
+                limbs.legR.rotation.x = -0.2;
+                // Arms up
+                limbs.armL.rotation.x = Math.PI; 
+                limbs.armR.rotation.x = Math.PI;
+                limbs.armL.rotation.z = 0.2;
+                limbs.armR.rotation.z = -0.2;
+            } else if (moveForward || moveBackward || moveLeft || moveRight) {
+                // Walking Animation
+                const walkSpeed = 10;
+                const angle = Math.sin(time * walkSpeed) * 0.6;
+                
+                limbs.legL.rotation.x = -angle;
+                limbs.legR.rotation.x = angle;
+                
+                // Arms opposite to legs
+                limbs.armL.rotation.x = angle;
+                limbs.armR.rotation.x = -angle;
+                limbs.armL.rotation.z = 0;
+                limbs.armR.rotation.z = 0;
+            } else {
+                // Idle
+                // Lerp back to zero roughly
+                limbs.legL.rotation.x = 0;
+                limbs.legR.rotation.x = 0;
+                limbs.armL.rotation.x = 0;
+                limbs.armR.rotation.x = 0;
+                limbs.armL.rotation.z = 0;
+                limbs.armR.rotation.z = 0;
+            }
+        }
+
+        // --- Input Handling ---
+        function onKeyDown(event) {
+            switch (event.code) {
+                case 'ArrowUp': case 'KeyW': moveForward = true; break;
+                case 'ArrowLeft': case 'KeyA': moveLeft = true; break;
+                case 'ArrowDown': case 'KeyS': moveBackward = true; break;
+                case 'ArrowRight': case 'KeyD': moveRight = true; break;
+                case 'Space': 
+                    if (isGrounded) playerVelocity.y = JUMP_FORCE; 
+                    break;
+                case 'KeyR': respawn(); break;
+            }
+        }
+
+        function onKeyUp(event) {
+            switch (event.code) {
+                case 'ArrowUp': case 'KeyW': moveForward = false; break;
+                case 'ArrowLeft': case 'KeyA': moveLeft = false; break;
+                case 'ArrowDown': case 'KeyS': moveBackward = false; break;
+                case 'ArrowRight': case 'KeyD': moveRight = false; break;
+            }
+        }
+
+        function pointerLockChange() {
+            if (document.pointerLockElement === document.body) {
+                isLocked = true;
+                blocker.style.display = 'none';
+                crosshair.style.display = 'block';
+            } else {
+                isLocked = false;
+                blocker.style.display = 'flex';
+                crosshair.style.display = 'none';
+                moveForward = false;
+                moveBackward = false;
+                moveLeft = false;
+                moveRight = false;
+            }
+        }
+
+        function onMouseMove(event) {
+            if (!isLocked) return;
+            const movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
+            const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+            euler.y -= movementX * 0.002;
+            euler.x -= movementY * 0.002;
+            const limit = Math.PI / 2 - 0.1;
+            euler.x = Math.max(-limit, Math.min(limit, euler.x));
+        }
+
+        // --- Physics & Game Loop ---
+        function respawn() {
+            playerMesh.position.copy(spawnPoint);
+            playerVelocity.set(0, 0, 0);
+            
+            // Safety: if we fell below the map, reset velocity again
+            if (playerMesh.position.y < -100) playerVelocity.set(0,0,0);
+        }
+
+        function checkCollisions() {
+            isGrounded = false;
+            const feetY = playerMesh.position.y - 0.5; // Feet are 0.5 below center (since legs are relative)
+            // Note: Since we changed leg geometry, Visual center is 1.0 + 0.5? No.
+            // Player Group Y is at feet level? 
+            // In CreatePlayer: Torso Y=1. Legs Y=0.5. 
+            // The Group position is actually at the "ground" level of the model initially.
+            // Wait, Torso is 1 unit up. Legs are at 0.5 (center). Leg height 1. 
+            // So Leg bottom is at 0.0 relative to group.
+            // So group.position IS feet position.
+            // Let's verify...
+            // Yes. Leg Geo 1 height, translated -0.5. So pivot is top (0.5).
+            // Leg Mesh pos 0.5. 
+            // Top of leg is 0.5. Bottom is 0.5 - 1 = -0.5.
+            // So feet are at -0.5 relative to group center.
+            
+            // Let's adjust this. 
+            // Standard ThreeJS logic: A simpler approach is to use a Raycaster, but Box checking is robust for obbys.
+            // Let's stick to the box check we had which worked well.
+            // We need to know EXACTLY where the bottom of the mesh is.
+            // If Group is at Y, Legs (in group) are at 0.5. Leg Geo extends -1 down from pivot.
+            // Wait, I translated LegGeo by -0.5. 
+            // So if I place mesh at 0.5:
+            // Top (Pivot) = 0.5 + 0 = 0.5.
+            // Bottom = 0.5 - 1 = -0.5.
+            // So Feet Y = Group.y - 0.5.
+            
+            const playerFeetY = playerMesh.position.y; // Let's treat group pos as "center of mass" roughly
+            // Actually, previously createPlayer put legs at y=0 relative to group.
+            // Previously: Legs Box(1,1,0.5). Pos 0. Extent -0.5 to 0.5.
+            // Current: Leg Box(0.4, 1, 0.5). Translated -0.5. Pos 0.5.
+            // Mesh Pos 0.5. Vertices: 0.5 + 0 = 0.5 (Top). 0.5 - 1 = -0.5 (Bottom).
+            // So Feet are at Group.y - 0.5.
+            
+            const feetPos = new THREE.Vector3(playerMesh.position.x, playerMesh.position.y - 0.5, playerMesh.position.z);
+            const playerRadius = 0.4;
+            
+            // Optimization: Only check platforms near us (simple Z check)
+            // Or just check all, JS is fast enough for ~500 boxes.
+            
+            for (let i = platforms.length - 1; i >= 0; i--) {
+                const p = platforms[i];
+                // Distance cull
+                if (Math.abs(p.mesh.position.z - feetPos.z) > 10) continue;
+
+                const pPos = p.mesh.position;
+                const halfW = p.width / 2;
+                const halfD = p.depth / 2;
+                const halfH = p.height / 2;
+                const topY = pPos.y + halfH;
+
+                if (Math.abs(feetPos.x - pPos.x) < halfW + playerRadius && 
+                    Math.abs(feetPos.z - pPos.z) < halfD + playerRadius) {
+                    
+                    const landingTolerance = 0.25; 
+                    
+                    if (feetPos.y >= topY - landingTolerance && 
+                        feetPos.y + playerVelocity.y <= topY + landingTolerance) {
+                        
+                        // Hit
+                        if(p.type === 'lava') {
+                            respawn();
+                            return;
+                        }
+
+                        isGrounded = true;
+                        playerVelocity.y = Math.max(0, playerVelocity.y);
+                        // Snap feet to top
+                        playerMesh.position.y = topY + 0.5;
+                        
+                        // Checkpoint Logic
+                        if(p.type === 'checkpoint') {
+                            // Check if this is a NEW checkpoint (higher stage than current)
+                            // or just the end of the current generated one.
+                            // We use a small flag on the platform to prevent double triggers
+                            if(!p.triggered) {
+                                p.triggered = true;
+                                spawnPoint.set(pPos.x, topY + 0.5 + 2, pPos.z);
+                                
+                                // Generate NEXT stage
+                                generateRandomStage();
+                                currentStage++;
+                                document.getElementById('stage-display').innerText = currentStage;
+                                
+                                const msg = document.getElementById('checkpoint-msg');
+                                msg.style.opacity = 1;
+                                setTimeout(() => { msg.style.opacity = 0; }, 2000);
+                            } else {
+                                // Just update spawn if we touch it again (safe)
+                                spawnPoint.set(pPos.x, topY + 0.5 + 2, pPos.z);
+                            }
+                        }
+
+                        if(p.type === 'win') {
+                             // Legacy type
+                        }
+                    }
+                }
+            }
+
+            if (playerMesh.position.y < -30) {
+                respawn();
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = Date.now() / 1000;
+
+            if (!isLocked) {
+                renderer.render(scene, camera);
+                return;
+            }
+
+            // 1. Shift Lock Rotation
+            playerMesh.rotation.y = euler.y + Math.PI;
+
+            // 2. Physics
+            if (!isGrounded) {
+                playerVelocity.y -= GRAVITY;
+            }
+
+            // 3. Movement
+            const speed = PLAYER_SPEED;
+            const yaw = euler.y;
+            const fwdX = -Math.sin(yaw);
+            const fwdZ = -Math.cos(yaw);
+            const rightX = Math.cos(yaw);
+            const rightZ = -Math.sin(yaw);
+
+            let moveX = 0;
+            let moveZ = 0;
+
+            if (moveForward) { moveX += fwdX; moveZ += fwdZ; }
+            if (moveBackward) { moveX -= fwdX; moveZ -= fwdZ; }
+            if (moveLeft) { moveX -= rightX; moveZ -= rightZ; }
+            if (moveRight) { moveX += rightX; moveZ += rightZ; }
+
+            if (moveX !== 0 || moveZ !== 0) {
+                const len = Math.sqrt(moveX*moveX + moveZ*moveZ);
+                moveX = (moveX / len) * speed;
+                moveZ = (moveZ / len) * speed;
+                playerMesh.position.x += moveX;
+                playerMesh.position.z += moveZ;
+            }
+
+            playerMesh.position.y += playerVelocity.y;
+
+            // 4. Collision
+            checkCollisions();
+
+            // 5. Animation
+            updateAnimation(time);
+
+            // 6. Camera
+            camera.quaternion.setFromEuler(euler);
+            const camOffset = new THREE.Vector3(1.5, 2, 5);
+            camOffset.applyEuler(euler);
+            camera.position.copy(playerMesh.position).add(camOffset);
+
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+    </script>
+</body>
+</html>
