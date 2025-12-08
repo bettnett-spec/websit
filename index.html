@@ -86,7 +86,6 @@
     </div>
 
     <!-- SOUND EFFECTS -->
-    <!-- Assuming these files are in the same directory as this HTML file -->
     <audio id="sfx-jump" src="jump.mp3"></audio>
     <audio id="sfx-check" src="checkpoint.wav"></audio>
     <audio id="sfx-death" src="death.mp3"></audio>
@@ -159,7 +158,7 @@
         const sfxFire = document.getElementById('sfx-fire');
         const sfxWalk = document.getElementById('sfx-walk');
         
-        if(sfxWalk) sfxWalk.volume = 0.4; // Lower walking volume slightly
+        if(sfxWalk) sfxWalk.volume = 0.4; 
 
         init();
         animate();
@@ -368,6 +367,11 @@
             // Tuck in
             armR.rotation.z = -0.1;
             group.add(armR);
+            
+            // Hands (Optional detail to match skin)
+            // Just tint the bottom of the arm? No, keep it simple single mesh per block per request.
+            // If you want hands distinct, I would need to split the mesh.
+            // For now, full sleeve look (Light Blue).
 
             group.position.copy(spawnPoint);
             group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
