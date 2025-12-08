@@ -85,6 +85,14 @@
         </div>
     </div>
 
+    <!-- SOUND EFFECTS -->
+    <!-- Assuming these files are in the same directory as this HTML file -->
+    <audio id="sfx-jump" src="jump.mp3"></audio>
+    <audio id="sfx-check" src="checkpoint.wav"></audio>
+    <audio id="sfx-death" src="death.mp3"></audio>
+    <audio id="sfx-fire" src="firedeath.mp3"></audio>
+    <audio id="sfx-walk" src="walk.mp3" loop></audio>
+
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
@@ -144,6 +152,15 @@
         const instructions = document.getElementById('instructions');
         const crosshair = document.getElementById('crosshair');
 
+        // Sound Elements
+        const sfxJump = document.getElementById('sfx-jump');
+        const sfxCheck = document.getElementById('sfx-check');
+        const sfxDeath = document.getElementById('sfx-death');
+        const sfxFire = document.getElementById('sfx-fire');
+        const sfxWalk = document.getElementById('sfx-walk');
+        
+        if(sfxWalk) sfxWalk.volume = 0.4; // Lower walking volume slightly
+
         init();
         animate();
 
@@ -195,6 +212,11 @@
             
             instructions.addEventListener('click', function() {
                 document.body.requestPointerLock();
+                // Interaction required to unlock audio
+                if(sfxJump) sfxJump.play().then(() => {
+                    sfxJump.pause();
+                    sfxJump.currentTime = 0;
+                }).catch(()=>{});
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
             document.addEventListener('mousemove', onMouseMove);
@@ -307,7 +329,7 @@
             // Materials (Updated Colors)
             const matSkin = new THREE.MeshLambertMaterial({ color: 0xFFE0BD }); // Peach
             const matTorso = new THREE.MeshLambertMaterial({ color: 0xADD8E6 }); // Light Blue
-            const matPants = new THREE.MeshLambertMaterial({ color: 0xF0F0E0 }); // Off White
+            const matPants = new THREE.MeshLambertMaterial({ color: 0xF5F5F5 }); // Off White
 
             // 1. Torso (Simple Box)
             const torso = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.5), matTorso);
@@ -382,17 +404,14 @@
                  limbs.legL.rotation.x = -0.2; 
                  limbs.legR.rotation.x = -0.3;
             } else if (!isGrounded && airTime > 0.15) {
-                // JUMP ANIMATION (FIXED ROTATION)
-                // Left Leg rotates -Z to go Left (Out)
-                // Right Leg rotates +Z to go Right (Out)
-                limbs.legL.rotation.z = -0.4;  
-                limbs.legR.rotation.z = 0.4; 
+                // JUMP ANIMATION (Fixed: Side Split)
+                // Use Z axis for Side-to-Side
+                limbs.legL.rotation.z = 0.4;  // Out Left
+                limbs.legR.rotation.z = -0.4; // Out Right
 
-                // Arms Out (45 degrees / ~0.8 rad)
-                // Left Arm rotates -Z to go Left (Out)
-                // Right Arm rotates +Z to go Right (Out)
-                limbs.armL.rotation.z = -0.8; 
-                limbs.armR.rotation.z = 0.8;  
+                // Arms Up and Out (Corrected angle: ~45 degrees)
+                limbs.armL.rotation.z = 0.8; // Out Left 
+                limbs.armR.rotation.z = -0.8;  // Out Right 
             } else if (moveForward || moveBackward || moveLeft || moveRight) {
                 // Walk Animation
                 const speed = isShiftPressed ? 5 : 10;
@@ -415,7 +434,7 @@
                 case 'Space': 
                     isSpacePressed = true;
                     break;
-                case 'KeyR': respawn(); break;
+                case 'KeyR': respawn('fall'); break; // Manual reset counts as fall
             }
         }
 
@@ -459,11 +478,18 @@
         }
 
         // --- Physics Loop ---
-        function respawn() {
+        function respawn(type) {
             playerMesh.position.copy(spawnPoint);
             playerVelocity.set(0, 0, 0);
             momentum.set(0, 0, 0);
             if (playerMesh.position.y < -100) playerVelocity.set(0,0,0);
+            
+            // SFX
+            if (type === 'fire') {
+                if(sfxFire) { sfxFire.currentTime = 0; sfxFire.play(); }
+            } else {
+                if(sfxDeath) { sfxDeath.currentTime = 0; sfxDeath.play(); }
+            }
         }
 
         function startClimb(p, halfW, halfD, radius, topY) {
@@ -554,6 +580,9 @@
                         // Apply momentum based on final angle
                         momentum.set(Math.sin(finalAngle), 0, Math.cos(finalAngle)).multiplyScalar(0.5); 
                         
+                        // SFX
+                        if(sfxJump) { sfxJump.currentTime=0; sfxJump.play(); }
+
                         return;
                     }
                     
@@ -615,7 +644,7 @@
                             playerVelocity.y = 0;
                             momentum.set(0,0,0); // Stop momentum on land
                             
-                            if(p.type === 'lava') { respawn(); return; }
+                            if(p.type === 'lava') { respawn('fire'); return; }
                             if(p.type === 'checkpoint') triggerCheckpoint(p);
                         } 
                         else if (feetY < maxY - 0.1) {
@@ -664,7 +693,7 @@
                 startClimb(ledgePlatform, ledgePlatform.width/2, ledgePlatform.depth/2, playerRadius, topY);
             }
 
-            if (playerMesh.position.y < -30) respawn();
+            if (playerMesh.position.y < -30) respawn('fall');
         }
 
         function triggerCheckpoint(p) {
@@ -677,6 +706,9 @@
                 const msg = document.getElementById('checkpoint-msg');
                 msg.style.opacity = 1;
                 setTimeout(() => { msg.style.opacity = 0; }, 2000);
+                
+                // SFX
+                if(sfxCheck) { sfxCheck.currentTime=0; sfxCheck.play(); }
             } else {
                 spawnPoint.set(p.mesh.position.x, p.mesh.position.y + 0.5 + 2, p.mesh.position.z);
             }
@@ -722,6 +754,8 @@
             if (isGrounded && isSpacePressed) {
                 playerVelocity.y = JUMP_FORCE;
                 isGrounded = false;
+                // SFX
+                if(sfxJump) { sfxJump.currentTime=0; sfxJump.play(); }
             }
 
             // 3. Movement
@@ -754,7 +788,16 @@
                 
                 playerMesh.position.x += moveX;
                 playerMesh.position.z += moveZ;
+                
+                // Walking SFX Loop
+                if(isGrounded && sfxWalk) {
+                    if(sfxWalk.paused) sfxWalk.play();
+                }
+            } else {
+                if(sfxWalk && !sfxWalk.paused) sfxWalk.pause();
             }
+            
+            if(!isGrounded && sfxWalk) sfxWalk.pause();
 
             // Apply Momentum
             playerMesh.position.add(momentum);
