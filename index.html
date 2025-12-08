@@ -84,7 +84,6 @@
         </div>
     </div>
 
-    <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
@@ -99,6 +98,7 @@
         let camera, scene, renderer;
         let playerMesh;
         let platforms = [];
+        let clock; // NEW: The Clock
         
         // Physics State
         let playerVelocity = new THREE.Vector3();
@@ -129,6 +129,9 @@
         animate();
 
         function init() {
+            // NEW: Initialize Clock
+            clock = new THREE.Clock();
+
             // 1. Scene Setup
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87CEEB); // Sky blue
@@ -246,11 +249,11 @@
                     curZ -= len;
                 }
                 else if (r < 0.8) {
-                     // 3. Thin Beam (Balance)
-                     const len = 6 + Math.random() * 6;
-                     curZ -= len/2;
-                     createPlatform(curX, curY, curZ, 1, 1, len, stageColor);
-                     curZ -= len/2;
+                      // 3. Thin Beam (Balance)
+                      const len = 6 + Math.random() * 6;
+                      curZ -= len/2;
+                      createPlatform(curX, curY, curZ, 1, 1, len, stageColor);
+                      curZ -= len/2;
                 }
                 else {
                     // 4. Stepping Stones
@@ -442,43 +445,10 @@
 
         function checkCollisions() {
             isGrounded = false;
-            const feetY = playerMesh.position.y - 0.5; // Feet are 0.5 below center (since legs are relative)
-            // Note: Since we changed leg geometry, Visual center is 1.0 + 0.5? No.
-            // Player Group Y is at feet level? 
-            // In CreatePlayer: Torso Y=1. Legs Y=0.5. 
-            // The Group position is actually at the "ground" level of the model initially.
-            // Wait, Torso is 1 unit up. Legs are at 0.5 (center). Leg height 1. 
-            // So Leg bottom is at 0.0 relative to group.
-            // So group.position IS feet position.
-            // Let's verify...
-            // Yes. Leg Geo 1 height, translated -0.5. So pivot is top (0.5).
-            // Leg Mesh pos 0.5. 
-            // Top of leg is 0.5. Bottom is 0.5 - 1 = -0.5.
-            // So feet are at -0.5 relative to group center.
-            
-            // Let's adjust this. 
-            // Standard ThreeJS logic: A simpler approach is to use a Raycaster, but Box checking is robust for obbys.
-            // Let's stick to the box check we had which worked well.
-            // We need to know EXACTLY where the bottom of the mesh is.
-            // If Group is at Y, Legs (in group) are at 0.5. Leg Geo extends -1 down from pivot.
-            // Wait, I translated LegGeo by -0.5. 
-            // So if I place mesh at 0.5:
-            // Top (Pivot) = 0.5 + 0 = 0.5.
-            // Bottom = 0.5 - 1 = -0.5.
-            // So Feet Y = Group.y - 0.5.
-            
-            const playerFeetY = playerMesh.position.y; // Let's treat group pos as "center of mass" roughly
-            // Actually, previously createPlayer put legs at y=0 relative to group.
-            // Previously: Legs Box(1,1,0.5). Pos 0. Extent -0.5 to 0.5.
-            // Current: Leg Box(0.4, 1, 0.5). Translated -0.5. Pos 0.5.
-            // Mesh Pos 0.5. Vertices: 0.5 + 0 = 0.5 (Top). 0.5 - 1 = -0.5 (Bottom).
-            // So Feet are at Group.y - 0.5.
+            const feetY = playerMesh.position.y - 0.5; 
             
             const feetPos = new THREE.Vector3(playerMesh.position.x, playerMesh.position.y - 0.5, playerMesh.position.z);
             const playerRadius = 0.4;
-            
-            // Optimization: Only check platforms near us (simple Z check)
-            // Or just check all, JS is fast enough for ~500 boxes.
             
             for (let i = platforms.length - 1; i >= 0; i--) {
                 const p = platforms[i];
@@ -512,9 +482,6 @@
                         
                         // Checkpoint Logic
                         if(p.type === 'checkpoint') {
-                            // Check if this is a NEW checkpoint (higher stage than current)
-                            // or just the end of the current generated one.
-                            // We use a small flag on the platform to prevent double triggers
                             if(!p.triggered) {
                                 p.triggered = true;
                                 spawnPoint.set(pPos.x, topY + 0.5 + 2, pPos.z);
@@ -528,13 +495,8 @@
                                 msg.style.opacity = 1;
                                 setTimeout(() => { msg.style.opacity = 0; }, 2000);
                             } else {
-                                // Just update spawn if we touch it again (safe)
                                 spawnPoint.set(pPos.x, topY + 0.5 + 2, pPos.z);
                             }
-                        }
-
-                        if(p.type === 'win') {
-                             // Legacy type
                         }
                     }
                 }
@@ -547,6 +509,17 @@
 
         function animate() {
             requestAnimationFrame(animate);
+            
+            // NEW: Delta Time Calculation
+            // This ensures movement is the same speed on 60hz, 120hz, or 240hz screens
+            const dt = clock.getDelta();
+            
+            // We assume original values were tuned for 60fps.
+            // If running at 60fps, dt = 0.016. 0.016 * 60 = 1 (Normal Speed)
+            // If running at 120fps, dt = 0.008. 0.008 * 60 = 0.5 (Slows down the loop to normal)
+            // We cap it at 4 to prevent lag spikes from teleporting the player
+            const timeScale = Math.min(dt * 60, 4);
+
             const time = Date.now() / 1000;
 
             if (!isLocked) {
@@ -559,7 +532,8 @@
 
             // 2. Physics
             if (!isGrounded) {
-                playerVelocity.y -= GRAVITY;
+                // Apply Gravity adjusted by TimeScale
+                playerVelocity.y -= GRAVITY * timeScale;
             }
 
             // 3. Movement
@@ -580,13 +554,16 @@
 
             if (moveX !== 0 || moveZ !== 0) {
                 const len = Math.sqrt(moveX*moveX + moveZ*moveZ);
-                moveX = (moveX / len) * speed;
-                moveZ = (moveZ / len) * speed;
+                // Apply TimeScale to movement Speed
+                moveX = (moveX / len) * speed * timeScale;
+                moveZ = (moveZ / len) * speed * timeScale;
+                
                 playerMesh.position.x += moveX;
                 playerMesh.position.z += moveZ;
             }
 
-            playerMesh.position.y += playerVelocity.y;
+            // Apply TimeScale to vertical velocity
+            playerMesh.position.y += playerVelocity.y * timeScale;
 
             // 4. Collision
             checkCollisions();
