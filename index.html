@@ -113,7 +113,7 @@
 
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- REQUIRED for loading OBJ models -->
+    <!-- REQUIRED for loading OBJ models (Updated CDN link structure) -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
 
@@ -202,7 +202,7 @@
 
             // 1. Scene Setup
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x87CEEB); 
+            scene.background = new new THREE.Color(0x87CEEB); 
             scene.fog = new THREE.Fog(0x87CEEB, 20, 150);
 
             // 2. Camera (FOV 85)
@@ -272,6 +272,9 @@
         function loadObjModel(objPath, mtlPath) {
             return new Promise((resolve, reject) => {
                 const mtlLoader = new THREE.MTLLoader();
+                // Crucially, set the base path for textures BEFORE loading the MTL file.
+                // This assumes all texture files mentioned in the MTL are in the same folder as the MTL/OBJ.
+                mtlLoader.setPath('./'); 
                 
                 mtlLoader.load(mtlPath, function (materials) {
                     materials.preload();
@@ -348,46 +351,63 @@
                 loadObjModel('hair.obj', 'hair.mtl'),
                 loadObjModel('backpack.obj', 'backpack.mtl')
             ]).catch(e => {
+                // Keep the error reporting, but remove the throw to allow the app to run without models
                 console.error("Failed to load one or more OBJ assets:", e);
-                loaderDiv.innerHTML = "Error loading models. Check console for details.";
-                isPlayerLoaded = false;
-                throw new Error("Model loading failed.");
+                loaderDiv.innerHTML = "Error loading models. Default player visible.";
+                isPlayerLoaded = true; // Still allow game to start with blocky player
+                return [null, null, null];
             });
 
-            // Set head blocky mesh to invisible, use only for anchoring/pivot
-            headMesh.visible = false;
-            
-            // Center the backpack on the back of the torso
-            backpackObj.position.set(0, 1.0, -0.25); // Torso center is Y=1.0, 0.25 back from center Z=0
-            backpackObj.scale.set(0.01, 0.01, 0.01); // Scale down dramatically (Roblox exports are huge)
-            torsoMesh.add(backpackObj); // Attach to the torso so it moves with the body
+            if (faceObj && hairObj && backpackObj) {
+                // Set blocky mesh parts to invisible since we loaded custom ones
+                headMesh.visible = false;
+                
+                // Center the backpack on the back of the torso
+                backpackObj.position.set(0, 1.0, -0.25); // Torso center is Y=1.0, 0.25 back from center Z=0
+                backpackObj.scale.set(0.01, 0.01, 0.01); // Scale down dramatically (Roblox exports are huge)
+                torsoMesh.add(backpackObj); // Attach to the torso so it moves with the body
 
-            // Center Face/Hair on the head anchor point
-            // Note: OBJ assets from Roblox are often 100x too large, require scaling down and specific positioning/rotation
-            const headScale = 0.01; 
-            faceObj.scale.set(headScale, headScale, headScale);
-            hairObj.scale.set(headScale, headScale, headScale);
+                // Center Face/Hair on the head anchor point
+                // Note: OBJ assets from Roblox are often 100x too large, require scaling down and specific positioning/rotation
+                const headScale = 0.01; 
+                faceObj.scale.set(headScale, headScale, headScale);
+                hairObj.scale.set(headScale, headScale, headScale);
+                
+                // Position adjustment: Roblox OBJ models typically place the origin far from the head.
+                // These values (0, 0, 0) are placeholders. You may need to tweak them significantly 
+                // after testing the initial load, likely adding Y offset and rotating 180 degrees.
+                faceObj.position.set(0, -1.8, 0); 
+                hairObj.position.set(0, -1.8, 0); 
+                
+                headAnchor.add(faceObj);
+                headAnchor.add(hairObj);
+                
+                // --- Final Setup ---
+                group.position.copy(spawnPoint);
+                group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
+
+                scene.add(group);
+                playerMesh = group;
+                
+                // Store references to the rotating parts for the animation loop
+                playerMesh.userData = { 
+                    legL, legR, armL, armR, 
+                    faceObj, hairObj, backpackObj 
+                };
+            } else {
+                 // Ensure playerMesh exists even if custom loading failed
+                 // In this case, it already contains the blocky parts, so nothing needed here.
+            }
             
-            // Position adjustment: Roblox OBJ models typically place the origin far from the head.
-            // These values (0, 0, 0) are placeholders. You may need to tweak them significantly 
-            // after testing the initial load, likely adding Y offset and rotating 180 degrees.
-            faceObj.position.set(0, -1.8, 0); 
-            hairObj.position.set(0, -1.8, 0); 
-            
-            headAnchor.add(faceObj);
-            headAnchor.add(hairObj);
-            
-            // --- Final Setup ---
             group.position.copy(spawnPoint);
             group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
-
             scene.add(group);
             playerMesh = group;
             
             // Store references to the rotating parts for the animation loop
             playerMesh.userData = { 
                 legL, legR, armL, armR, 
-                faceObj, hairObj, backpackObj 
+                faceObj: faceObj, hairObj: hairObj, backpackObj: backpackObj 
             };
             isPlayerLoaded = true;
         }
@@ -407,6 +427,8 @@
             limbs.armL.rotation.set(0,0,0);
             limbs.armR.rotation.set(0,0,0);
 
+            // Safety check for OBJ accessories
+            const hasBackpack = !!limbs.backpackObj;
 
             if (isClimbing) {
                  limbs.armL.rotation.x = -Math.PI; 
@@ -420,7 +442,9 @@
                  limbs.legR.rotation.x = -0.3;
                  
                  // Backpack slight vertical movement while climbing
-                 limbs.backpackObj.position.y = 1.0 + Math.sin(time * 10) * 0.05;
+                 if (hasBackpack) {
+                    limbs.backpackObj.position.y = 1.0 + Math.sin(time * 10) * 0.05;
+                 }
             } else if (!isGrounded && airTime > 0.15) {
                 // JUMP ANIMATION: Arms and legs spread wide when airborne
                 
@@ -434,7 +458,9 @@
                 limbs.armR.rotation.z = 0.8;  // OUTWARDS RIGHT
                 
                 // Reset backpack position
-                limbs.backpackObj.position.y = 1.0; 
+                if (hasBackpack) {
+                    limbs.backpackObj.position.y = 1.0; 
+                }
                 
             } else if (moveForward || moveBackward || moveLeft || moveRight) {
                 // WALKING / RUNNING ANIMATION: Arm/Leg X-axis swing
@@ -446,181 +472,16 @@
                 limbs.armR.rotation.x = -angle;
                 
                 // Reset backpack position
-                limbs.backpackObj.position.y = 1.0; 
-            } else {
-                // STANDING / IDLE: Arms straight down, no animation.
-                // Reset backpack position
-                limbs.backpackObj.position.y = 1.0; 
-            }
-
-            // Continuously rotate hair slightly for a subtle effect
-            if (limbs.hairObj) {
-                 limbs.hairObj.rotation.y = Math.sin(time * 0.5) * 0.1;
-            }
-        }
-
-        // ... (rest of the functions remain the same) ...
-        
-        // --- Level Generation ---
-        function createPlatform(x, y, z, w, h, d, color, type = 'normal') {
-            const geometry = new THREE.BoxGeometry(w, h, d);
-            const material = new THREE.MeshLambertMaterial({ color: color });
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(x, y, z);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            scene.add(mesh);
-
-
-            const platformData = {
-                mesh: mesh,
-                box: new THREE.Box3().setFromObject(mesh), 
-                width: w,
-                height: h,
-                depth: d,
-                type: type,
-                stage: currentStage
-            };
-            platforms.push(platformData);
-            return mesh;
-        }
-
-
-        function generateRandomStage() {
-            const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
-            const stageColor = colors[Math.floor(Math.random() * colors.length)];
-            
-            let curX = nextStageStart.x;
-            let curY = nextStageStart.y;
-            let curZ = nextStageStart.z;
-
-
-            const obstaclesCount = 5 + Math.floor(Math.random() * 4); 
-
-
-            for (let i = 0; i < obstaclesCount; i++) {
-                const r = Math.random();
-                const gap = 2.5 + Math.random() * 3.0;
-                
-                const driftX = (Math.random() - 0.5) * 8; 
-                const driftY = (Math.random() - 0.4) * 2; 
-
-
-                curZ -= gap;
-                curX += driftX;
-                curY += driftY;
-                
-                if(curX > 40) curX = 40;
-                if(curX < -40) curX = -40;
-
-
-                if (r < 0.3) {
-                    const w = 3 + Math.random() * 3;
-                    const d = 3 + Math.random() * 3;
-                    curZ -= d/2;
-                    createPlatform(curX, curY, curZ, w, 1, d, stageColor);
-                    curZ -= d/2;
-                } 
-                else if (r < 0.5) {
-                    const len = 8 + Math.random() * 6;
-                    createPlatform(curX, curY, curZ - len/2, 4, 1, len, 0x333333);
-                    const lavaCount = Math.floor(len / 4); 
-                    for(let k=0; k<lavaCount; k++) {
-                        const lZ = curZ - (k * 4) - 2;
-                        createPlatform(curX, curY + 0.6, lZ, 3.5, 0.2, 1.0, 0xff0000, 'lava');
-                    }
-                    curZ -= len;
+                if (hasBackpack) {
+                    limbs.backpackObj.position.y = 1.0; 
                 }
-                else if (r < 0.7) {
-                     const len = 6 + Math.random() * 6;
-                     curZ -= len/2;
-                     createPlatform(curX, curY, curZ, 1.2, 1, len, stageColor);
-                     curZ -= len/2;
-                }
-                else {
-                    const steps = 3 + Math.floor(Math.random()*3);
-                    for(let s=0; s<steps; s++) {
-                        curZ -= 2.5; 
-                        curX += (Math.random() - 0.5) * 5; 
-                        curY += (Math.random() - 0.3) * 1.5; 
-                        createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
-                    }
-                }
-            }
-
-
-            curZ -= 4;
-            createPlatform(curX, curY, curZ - 3, 8, 1, 6, 0x00FF00, 'checkpoint');
-            
-            const geo = new THREE.CylinderGeometry(0.5, 0.5, 5);
-            const mat = new THREE.MeshBasicMaterial({color: 0xffff00});
-            const pole = new THREE.Mesh(geo, mat);
-            pole.position.set(curX + 3, curY + 2.5, curZ - 3);
-            scene.add(pole);
-
-
-            nextStageStart.set(curX, curY, curZ - 6);
-        }
-
-
-        function updateAnimation(time) {
-            if (!isPlayerLoaded || !playerMesh || !playerMesh.userData) return;
-            
-            const limbs = playerMesh.userData;
-
-            // Reset rotations (A clean starting state for all limbs)
-            limbs.legL.rotation.set(0,0,0);
-            limbs.legR.rotation.set(0,0,0);
-            limbs.armL.rotation.set(0,0,0);
-            limbs.armR.rotation.set(0,0,0);
-
-
-            if (isClimbing) {
-                 limbs.armL.rotation.x = -Math.PI; 
-                 limbs.armR.rotation.x = -Math.PI; 
-                 
-                 if (climbPhase === 1 && climbTimer > 0.1) {
-                     limbs.armL.rotation.x = -Math.PI / 2;
-                     limbs.armR.rotation.x = -Math.PI / 2;
-                 }
-                 limbs.legL.rotation.x = -0.2; 
-                 limbs.legR.rotation.x = -0.3;
-                 
-                 // Backpack slight vertical movement while climbing
-                 limbs.backpackObj.position.y = 1.0 + Math.sin(time * 10) * 0.05;
-            } else if (!isGrounded && airTime > 0.15) {
-                // JUMP ANIMATION: Arms and legs spread wide when airborne
-                
-                // Legs
-                limbs.legL.rotation.z = -0.4;  // OUTWARDS LEFT
-                limbs.legR.rotation.z = 0.4; // OUTWARDS RIGHT
-
-
-                // Arms (The rotation values needed for wide outward swing)
-                limbs.armL.rotation.z = -0.8; // OUTWARDS LEFT 
-                limbs.armR.rotation.z = 0.8;  // OUTWARDS RIGHT
-                
-                // Reset backpack position
-                limbs.backpackObj.position.y = 1.0; 
-                
-            } else if (moveForward || moveBackward || moveLeft || moveRight) {
-                // WALKING / RUNNING ANIMATION: Arm/Leg X-axis swing
-                const speed = isShiftPressed ? 5 : 10;
-                const angle = Math.sin(time * speed) * 0.8;
-                limbs.legL.rotation.x = -angle;
-                limbs.legR.rotation.x = angle;
-                limbs.armL.rotation.x = angle;
-                limbs.armR.rotation.x = -angle;
-                
-                // No Z-axis tuck needed (arms hang straight)
-                
-                // Reset backpack position
-                limbs.backpackObj.position.y = 1.0; 
             } else {
                 // STANDING / IDLE: Arms straight down, no animation.
                 
                 // Reset backpack position
-                limbs.backpackObj.position.y = 1.0; 
+                if (hasBackpack) {
+                    limbs.backpackObj.position.y = 1.0; 
+                }
             }
 
             // Continuously rotate hair slightly for a subtle effect
