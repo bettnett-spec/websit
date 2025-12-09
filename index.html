@@ -17,7 +17,7 @@
             pointer-events: none;
             font-weight: bold;
             text-shadow: 1px 1px 0 #000;
-            z-index: 998; /* Below blocker/crosshair */
+            z-index: 998; 
         }
         #checkpoint-msg {
             position: absolute;
@@ -31,7 +31,7 @@
             opacity: 0;
             transition: opacity 0.5s;
             pointer-events: none;
-            z-index: 998; /* Below blocker/crosshair */
+            z-index: 998; 
         }
         
         #blocker {
@@ -43,7 +43,6 @@
             justify-content: center;
             flex-direction: column;
             color: white;
-            /* Increased Z-index to ensure it is above EVERYTHING when visible */
             z-index: 1001; 
         }
         #instructions {
@@ -66,8 +65,19 @@
             border-radius: 50%;
             transform: translate(-50%, -50%);
             pointer-events: none;
-            /* Lowered z-index slightly relative to the blocker for safety */
             z-index: 1000; 
+        }
+        #loader {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 30px;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 #000;
+            z-index: 1002;
+            display: none; /* Hidden by default */
         }
     </style>
 </head>
@@ -77,6 +87,7 @@
     <div id="info">Stage: <span id="stage-display">1</span></div>
     <div id="checkpoint-msg">CHECKPOINT! NEXT LEVEL GENERATED</div>
     <div id="crosshair"></div>
+    <div id="loader">Loading 3D Assets...</div>
 
 
     <div id="blocker">
@@ -102,6 +113,9 @@
 
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- REQUIRED for loading OBJ models -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
 
 
     <script>
@@ -116,9 +130,12 @@
         
         // --- Global Variables ---
         let camera, scene, renderer;
-        let playerMesh;
+        let playerMesh; // Player Group (root of the character)
+        let torsoMesh; // Reference to the actual visible torso mesh
+        let headMesh;  // Reference to the actual visible head mesh
         let platforms = [];
         let clock; 
+        let isPlayerLoaded = false;
         
         // Physics State
         let playerVelocity = new THREE.Vector3();
@@ -159,6 +176,7 @@
         const blocker = document.getElementById('blocker');
         const instructions = document.getElementById('instructions');
         const crosshair = document.getElementById('crosshair');
+        const loaderDiv = document.getElementById('loader');
 
 
         // Sound Elements
@@ -172,18 +190,20 @@
 
 
         init();
-        animate();
-
-
-        function init() {
+        
+        // --- Core Initialization ---
+        async function init() {
             clock = new THREE.Clock();
 
+            // Show loader while models load
+            loaderDiv.style.display = 'block';
+            blocker.style.display = 'flex';
+            instructions.style.display = 'none';
 
             // 1. Scene Setup
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87CEEB); 
             scene.fog = new THREE.Fog(0x87CEEB, 20, 150);
-
 
             // 2. Camera (FOV 85)
             camera = new THREE.PerspectiveCamera(85, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -193,7 +213,6 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
             document.body.appendChild(renderer.domElement);
-
 
             // 4. Lighting
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -210,16 +229,13 @@
             dirLight.shadow.mapSize.height = 2048;
             scene.add(dirLight);
 
-
-            // 5. Create Player
-            createPlayer();
-
+            // 5. Create Player (Load Model)
+            await createPlayer();
 
             // 6. Create Initial Level
             createPlatform(0, 0, 0, 10, 1, 10, 0xaaaaaa, 'spawn'); 
             nextStageStart.set(0, 0, -5); 
             generateRandomStage();
-
 
             // 7. Event Listeners
             document.addEventListener('keydown', onKeyDown);
@@ -228,19 +244,223 @@
             window.addEventListener('resize', onWindowResize);
             
             instructions.addEventListener('click', function() {
-                // This is the click that requests Pointer Lock
+                if(!isPlayerLoaded) return;
+                
+                if(sfxJump) { 
+                    sfxJump.play().then(() => {
+                        sfxJump.pause();
+                        sfxJump.currentTime = 0;
+                    }).catch(e => { /* Audio playback error handling */ });
+                }
+                
                 document.body.requestPointerLock();
-                // Interaction required to unlock audio
-                if(sfxJump) sfxJump.play().then(() => {
-                    sfxJump.pause();
-                    sfxJump.currentTime = 0;
-                }).catch(e => {});
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
             document.addEventListener('mousemove', onMouseMove);
+
+            loaderDiv.style.display = 'none';
+            instructions.style.display = 'block';
+            animate();
+        }
+
+        /**
+         * Loads OBJ model files (using MTL for materials/textures).
+         * @param {string} objPath Path to the OBJ file.
+         * @param {string} mtlPath Path to the MTL file.
+         * @returns {Promise<THREE.Group>} A promise that resolves with the loaded object group.
+         */
+        function loadObjModel(objPath, mtlPath) {
+            return new Promise((resolve, reject) => {
+                const mtlLoader = new THREE.MTLLoader();
+                
+                mtlLoader.load(mtlPath, function (materials) {
+                    materials.preload();
+                    const objLoader = new THREE.OBJLoader();
+                    objLoader.setMaterials(materials);
+                    
+                    objLoader.load(objPath, function (object) {
+                        object.traverse(child => {
+                            if (child.isMesh) {
+                                child.castShadow = true;
+                            }
+                        });
+                        resolve(object);
+                    }, undefined, reject);
+                }, undefined, reject);
+            });
         }
 
 
+        // --- Player Creation (Uses Blocky skeleton + OBJ accessories) ---
+        async function createPlayer() {
+            const group = new THREE.Group();
+            
+            // Materials (Basic colors for untextured limbs)
+            const matTorso = new THREE.MeshLambertMaterial({ color: 0x0000FF }); // Blue
+            const matPants = new THREE.MeshLambertMaterial({ color: 0x00FF00 }); // Green
+            const matSkin = new THREE.MeshLambertMaterial({ color: 0xFFFF00 }); // Yellow
+
+
+            // 1. Torso (Used for physics and root of character, made visible for structure)
+            torsoMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.5), matTorso);
+            torsoMesh.position.y = 1;
+            group.add(torsoMesh);
+
+            // 2. Head (Used for positioning, set to hidden later as the OBJ assets are the visible head)
+            headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matSkin);
+            headMesh.position.y = 1.8;
+            group.add(headMesh);
+            
+            // The head is used as the anchor point for all facial/hair OBJs
+            const headAnchor = headMesh; 
+
+            // 3. Left Leg (Requires X/Z rotation in updateAnimation)
+            const legGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
+            legGeo.translate(0, -0.5, 0); // Pivot at Hip
+            const legL = new THREE.Mesh(legGeo, matPants);
+            legL.position.set(-0.25, 0.5, 0); 
+            group.add(legL);
+
+            // 4. Right Leg (Requires X/Z rotation in updateAnimation)
+            const legR = new THREE.Mesh(legGeo, matPants);
+            legR.position.set(0.25, 0.5, 0); 
+            group.add(legR);
+
+            // 5. Left Arm (Requires X/Z rotation in updateAnimation)
+            const armGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
+            armGeo.translate(0, -0.5, 0); // Pivot at Shoulder
+            const armL = new THREE.Mesh(armGeo, matSkin);
+            // Positioned to prevent clipping/detachment during rotation
+            armL.position.set(-0.7, 1.5, 0); 
+            armL.rotation.z = 0; 
+            group.add(armL);
+
+            // 6. Right Arm (Requires X/Z rotation in updateAnimation)
+            const armR = new THREE.Mesh(armGeo, matSkin);
+            armR.position.set(0.7, 1.5, 0); 
+            armR.rotation.z = 0; 
+            group.add(armR);
+
+
+            // --- Load Custom OBJ Assets ---
+            const [faceObj, hairObj, backpackObj] = await Promise.all([
+                loadObjModel('face.obj', 'face.mtl'),
+                loadObjModel('hair.obj', 'hair.mtl'),
+                loadObjModel('backpack.obj', 'backpack.mtl')
+            ]).catch(e => {
+                console.error("Failed to load one or more OBJ assets:", e);
+                loaderDiv.innerHTML = "Error loading models. Check console for details.";
+                isPlayerLoaded = false;
+                throw new Error("Model loading failed.");
+            });
+
+            // Set head blocky mesh to invisible, use only for anchoring/pivot
+            headMesh.visible = false;
+            
+            // Center the backpack on the back of the torso
+            backpackObj.position.set(0, 1.0, -0.25); // Torso center is Y=1.0, 0.25 back from center Z=0
+            backpackObj.scale.set(0.01, 0.01, 0.01); // Scale down dramatically (Roblox exports are huge)
+            torsoMesh.add(backpackObj); // Attach to the torso so it moves with the body
+
+            // Center Face/Hair on the head anchor point
+            // Note: OBJ assets from Roblox are often 100x too large, require scaling down and specific positioning/rotation
+            const headScale = 0.01; 
+            faceObj.scale.set(headScale, headScale, headScale);
+            hairObj.scale.set(headScale, headScale, headScale);
+            
+            // Position adjustment: Roblox OBJ models typically place the origin far from the head.
+            // These values (0, 0, 0) are placeholders. You may need to tweak them significantly 
+            // after testing the initial load, likely adding Y offset and rotating 180 degrees.
+            faceObj.position.set(0, -1.8, 0); 
+            hairObj.position.set(0, -1.8, 0); 
+            
+            headAnchor.add(faceObj);
+            headAnchor.add(hairObj);
+            
+            // --- Final Setup ---
+            group.position.copy(spawnPoint);
+            group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
+
+            scene.add(group);
+            playerMesh = group;
+            
+            // Store references to the rotating parts for the animation loop
+            playerMesh.userData = { 
+                legL, legR, armL, armR, 
+                faceObj, hairObj, backpackObj 
+            };
+            isPlayerLoaded = true;
+        }
+
+
+        // --- Game Logic and Animation ---
+
+        function updateAnimation(time) {
+            // Only run animations if the player model (and its components) are loaded
+            if (!isPlayerLoaded || !playerMesh || !playerMesh.userData) return;
+            
+            const limbs = playerMesh.userData;
+
+            // Reset rotations (A clean starting state for all limbs)
+            limbs.legL.rotation.set(0,0,0);
+            limbs.legR.rotation.set(0,0,0);
+            limbs.armL.rotation.set(0,0,0);
+            limbs.armR.rotation.set(0,0,0);
+
+
+            if (isClimbing) {
+                 limbs.armL.rotation.x = -Math.PI; 
+                 limbs.armR.rotation.x = -Math.PI; 
+                 
+                 if (climbPhase === 1 && climbTimer > 0.1) {
+                     limbs.armL.rotation.x = -Math.PI / 2;
+                     limbs.armR.rotation.x = -Math.PI / 2;
+                 }
+                 limbs.legL.rotation.x = -0.2; 
+                 limbs.legR.rotation.x = -0.3;
+                 
+                 // Backpack slight vertical movement while climbing
+                 limbs.backpackObj.position.y = 1.0 + Math.sin(time * 10) * 0.05;
+            } else if (!isGrounded && airTime > 0.15) {
+                // JUMP ANIMATION: Arms and legs spread wide when airborne
+                
+                // Legs
+                limbs.legL.rotation.z = -0.4;  // OUTWARDS LEFT
+                limbs.legR.rotation.z = 0.4; // OUTWARDS RIGHT
+
+
+                // Arms 
+                limbs.armL.rotation.z = -0.8; // OUTWARDS LEFT 
+                limbs.armR.rotation.z = 0.8;  // OUTWARDS RIGHT
+                
+                // Reset backpack position
+                limbs.backpackObj.position.y = 1.0; 
+                
+            } else if (moveForward || moveBackward || moveLeft || moveRight) {
+                // WALKING / RUNNING ANIMATION: Arm/Leg X-axis swing
+                const speed = isShiftPressed ? 5 : 10;
+                const angle = Math.sin(time * speed) * 0.8;
+                limbs.legL.rotation.x = -angle;
+                limbs.legR.rotation.x = angle;
+                limbs.armL.rotation.x = angle;
+                limbs.armR.rotation.x = -angle;
+                
+                // Reset backpack position
+                limbs.backpackObj.position.y = 1.0; 
+            } else {
+                // STANDING / IDLE: Arms straight down, no animation.
+                // Reset backpack position
+                limbs.backpackObj.position.y = 1.0; 
+            }
+
+            // Continuously rotate hair slightly for a subtle effect
+            if (limbs.hairObj) {
+                 limbs.hairObj.rotation.y = Math.sin(time * 0.5) * 0.1;
+            }
+        }
+
+        // ... (rest of the functions remain the same) ...
+        
         // --- Level Generation ---
         function createPlatform(x, y, z, w, h, d, color, type = 'normal') {
             const geometry = new THREE.BoxGeometry(w, h, d);
@@ -343,77 +563,10 @@
         }
 
 
-        // --- Player Creation (Original Blocky) ---
-        function createPlayer() {
-            const group = new THREE.Group();
-            
-            // Materials (Classic Noob)
-            const matHead = new THREE.MeshLambertMaterial({ color: 0xFFFF00 }); // Yellow
-            const matTorso = new THREE.MeshLambertMaterial({ color: 0x0000FF }); // Blue
-            const matPants = new THREE.MeshLambertMaterial({ color: 0x00FF00 }); // Green
-            const matSkin = matHead; // Re-use
-
-
-            // 1. Torso (Simple Box)
-            const torso = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.5), matTorso);
-            torso.position.y = 1;
-            group.add(torso);
-
-
-            // 2. Head (Simple Box)
-            const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matHead);
-            head.position.y = 1.8;
-            group.add(head);
-
-
-            // 3. Left Leg
-            const legGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
-            legGeo.translate(0, -0.5, 0); // Pivot at Hip
-            const legL = new THREE.Mesh(legGeo, matPants);
-            legL.position.set(-0.25, 0.5, 0); 
-            group.add(legL);
-
-
-            // 4. Right Leg
-            const legR = new THREE.Mesh(legGeo, matPants);
-            legR.position.set(0.25, 0.5, 0); 
-            group.add(legR);
-
-
-            // 5. Left Arm
-            const armGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
-            armGeo.translate(0, -0.5, 0); // Pivot at Shoulder
-            const armL = new THREE.Mesh(armGeo, matSkin);
-            // Arm position adjusted to prevent clipping/detachment
-            armL.position.set(-0.7, 1.5, 0); 
-            // Default rotation is 0 (handled by updateAnimation)
-            armL.rotation.z = 0; 
-            group.add(armL);
-
-
-            // 6. Right Arm
-            const armR = new THREE.Mesh(armGeo, matSkin);
-            armR.position.set(0.7, 1.5, 0); 
-            // Default rotation is 0 (handled by updateAnimation)
-            armR.rotation.z = 0; 
-            group.add(armR);
-
-
-            group.position.copy(spawnPoint);
-            group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
-
-
-            scene.add(group);
-            playerMesh = group;
-            
-            playerMesh.userData = { legL, legR, armL, armR };
-        }
-
-
         function updateAnimation(time) {
-            if (!playerMesh || !playerMesh.userData) return;
+            if (!isPlayerLoaded || !playerMesh || !playerMesh.userData) return;
+            
             const limbs = playerMesh.userData;
-
 
             // Reset rotations (A clean starting state for all limbs)
             limbs.legL.rotation.set(0,0,0);
@@ -432,6 +585,9 @@
                  }
                  limbs.legL.rotation.x = -0.2; 
                  limbs.legR.rotation.x = -0.3;
+                 
+                 // Backpack slight vertical movement while climbing
+                 limbs.backpackObj.position.y = 1.0 + Math.sin(time * 10) * 0.05;
             } else if (!isGrounded && airTime > 0.15) {
                 // JUMP ANIMATION: Arms and legs spread wide when airborne
                 
@@ -443,6 +599,10 @@
                 // Arms (The rotation values needed for wide outward swing)
                 limbs.armL.rotation.z = -0.8; // OUTWARDS LEFT 
                 limbs.armR.rotation.z = 0.8;  // OUTWARDS RIGHT
+                
+                // Reset backpack position
+                limbs.backpackObj.position.y = 1.0; 
+                
             } else if (moveForward || moveBackward || moveLeft || moveRight) {
                 // WALKING / RUNNING ANIMATION: Arm/Leg X-axis swing
                 const speed = isShiftPressed ? 5 : 10;
@@ -453,9 +613,19 @@
                 limbs.armR.rotation.x = -angle;
                 
                 // No Z-axis tuck needed (arms hang straight)
+                
+                // Reset backpack position
+                limbs.backpackObj.position.y = 1.0; 
             } else {
-                // STANDING / IDLE: Arms straight down, no rotation.
-                // No Z-axis tuck needed (arms hang straight)
+                // STANDING / IDLE: Arms straight down, no animation.
+                
+                // Reset backpack position
+                limbs.backpackObj.position.y = 1.0; 
+            }
+
+            // Continuously rotate hair slightly for a subtle effect
+            if (limbs.hairObj) {
+                 limbs.hairObj.rotation.y = Math.sin(time * 0.5) * 0.1;
             }
         }
 
@@ -593,147 +763,6 @@
             playerMesh.position.copy(climbStartPos);
         }
 
-
-        function checkPhysics(dt) {
-            // Climbing Physics
-            if (isClimbing) {
-                if (climbPhase === 0) {
-                    playerMesh.position.copy(climbStartPos); 
-                    
-                    if (isSpacePressed) {
-                        isClimbing = false;
-                        isGrounded = false;
-                        airTime = 0.2; 
-                        playerVelocity.y = JUMP_FORCE * 1.1; 
-                        
-                        const normalAngle = Math.atan2(climbNormal.x, climbNormal.z);
-                        const camAngle = Math.atan2(-Math.sin(euler.y), -Math.cos(euler.y));
-                        
-                        let diff = camAngle - normalAngle;
-                        while (diff > Math.PI) diff -= Math.PI * 2;
-                        while (diff < -Math.PI) diff += Math.PI * 2;
-                        
-                        const limit = Math.PI / 6;
-                        diff = Math.max(-limit, Math.min(limit, diff));
-                        
-                        const finalAngle = normalAngle + diff;
-                        
-                        momentum.set(Math.sin(finalAngle), 0, Math.cos(finalAngle)).multiplyScalar(0.5); 
-                        
-                        if(sfxJump) { sfxJump.currentTime=0; sfxJump.play().catch(e => {}); }
-
-
-                        return;
-                    }
-                    
-                    if (!isShiftPressed) {
-                        climbPhase = 1; 
-                        climbTimer = 0;
-                    }
-                } 
-                else {
-                    climbTimer += dt;
-                    if (climbTimer < 0.4) { 
-                        const t = climbTimer / 0.4;
-                        playerMesh.position.lerpVectors(climbStartPos, climbTargetPos, t);
-                    } else {
-                        playerMesh.position.copy(climbTargetPos);
-                        isClimbing = false;
-                        isGrounded = true;
-                    }
-                }
-                return;
-            }
-
-
-            const playerRadius = 0.4;
-            let onGround = false;
-            let hitLedge = false;
-            let ledgePlatform = null; 
-
-
-            const nextX = playerMesh.position.x; 
-            const nextZ = playerMesh.position.z;
-            const feetY = playerMesh.position.y - 0.5;
-            const headY = playerMesh.position.y + 1.0;
-
-
-            for (let p of platforms) {
-                if (Math.abs(p.mesh.position.z - nextZ) > 10 && Math.abs(p.mesh.position.x - nextX) > 10) continue;
-
-
-                const pPos = p.mesh.position;
-                const halfW = p.width / 2;
-                const halfD = p.depth / 2;
-                const halfH = p.height / 2;
-
-
-                const minX = pPos.x - halfW - playerRadius;
-                const maxX = pPos.x + halfW + playerRadius;
-                const minZ = pPos.z - halfD - playerRadius;
-                const maxZ = pPos.z + halfD + playerRadius;
-                const minY = pPos.y - halfH;
-                const maxY = pPos.y + halfH;
-
-
-                if (nextX > minX && nextX < maxX && nextZ > minZ && nextZ < maxZ) {
-                    if (feetY < maxY && headY > minY) {
-                        const depthIntoTop = (maxY) - feetY;
-                        
-                        if (depthIntoTop > 0 && depthIntoTop < 0.6 && playerVelocity.y <= 0.1) {
-                            onGround = true;
-                            playerMesh.position.y = maxY + 0.5;
-                            playerVelocity.y = 0;
-                            momentum.set(0,0,0); 
-                            
-                            if(p.type === 'lava') { respawn('fire'); return; }
-                            if(p.type === 'checkpoint') triggerCheckpoint(p);
-                        } 
-                        else if (feetY < maxY - 0.1) {
-                            if (feetY > maxY - 1.5 && feetY < maxY - 0.5 && p.type !== 'lava' && playerVelocity.y < 0) {
-                                hitLedge = true;
-                                ledgePlatform = p;
-                            } else {
-                                const dx1 = nextX - minX;
-                                const dx2 = maxX - nextX;
-                                const dz1 = nextZ - minZ;
-                                const dz2 = maxZ - nextZ;
-                                const minOverlap = Math.min(dx1, dx2, dz1, dz2);
-                                
-                                if (minOverlap === dx1) { playerMesh.position.x = minX; momentum.x = 0; }
-                                else if (minOverlap === dx2) { playerMesh.position.x = maxX; momentum.x = 0; }
-                                else if (minOverlap === dz1) { playerMesh.position.z = minZ; momentum.z = 0; }
-                                else if (minOverlap === dz2) { playerMesh.position.z = maxZ; momentum.z = 0; }
-                            }
-                        }
-                    }
-                }
-                else if (isShiftPressed && p.type !== 'lava') {
-                    const grabDist = 0.5;
-                    if (nextX > minX - grabDist && nextX < maxX + grabDist && 
-                        nextZ > minZ - grabDist && nextZ < maxZ + grabDist) {
-                        if (feetY > maxY - 1.2 && feetY < maxY - 0.2) {
-                            hitLedge = true;
-                            ledgePlatform = p;
-                        }
-                    }
-                }
-            }
-
-
-            isGrounded = onGround;
-
-
-            if (!isGrounded && hitLedge && ledgePlatform && airTime > 0.1) {
-                const topY = ledgePlatform.mesh.position.y + ledgePlatform.height/2;
-                startClimb(ledgePlatform, ledgePlatform.width/2, ledgePlatform.depth/2, playerRadius, topY);
-            }
-
-
-            if (playerMesh.position.y < -30) respawn('fall');
-        }
-
-
         function triggerCheckpoint(p) {
             if(!p.triggered) {
                 p.triggered = true;
@@ -751,15 +780,15 @@
             }
         }
 
-
+        // The animate loop starts only after init() resolves
         function animate() {
             requestAnimationFrame(animate);
+            
             const dt = clock.getDelta();
             const timeScale = Math.min(dt * 60, 4);
             const time = Date.now() / 1000;
 
-
-            if (!isLocked) {
+            if (!isLocked || !isPlayerLoaded) {
                 renderer.render(scene, camera);
                 return;
             }
