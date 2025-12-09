@@ -313,6 +313,31 @@
             nextStageStart.set(curX, curY, curZ - 6);
         }
 
+        // Helper function to update camera position based on player position and Euler angle
+        function updateCameraPosition() {
+            if (!playerMesh || !camera) return;
+            
+            camera.quaternion.setFromEuler(euler);
+            
+            let zDist = cameraZoom;
+            let yDist = Math.max(0, cameraZoom * 0.4); 
+            let xOffset = 1.5;
+            
+            // This logic is duplicated from animate(), but ensures camera snaps once instantly
+            if (cameraZoom < 1.0) {
+                xOffset = 0;
+                yDist = 0; 
+                zDist = -0.2; 
+                playerMesh.visible = false; 
+            } else {
+                playerMesh.visible = true;
+            }
+            
+            const camOffset = new THREE.Vector3(xOffset, 2 + yDist, zDist);
+            camOffset.applyEuler(euler);
+            camera.position.copy(playerMesh.position).add(camOffset);
+        }
+
         
         // --- Core Initialization ---
         async function init() {
@@ -381,6 +406,10 @@
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
             document.addEventListener('mousemove', onMouseMove);
+
+            // --- Camera Snap Fix ---
+            // Ensure the camera snaps to the player's position immediately after player/map creation
+            updateCameraPosition();
 
             // This ensures the loader is hidden and instructions shown AFTER everything loads.
             loaderDiv.style.display = 'none';
@@ -791,11 +820,15 @@
             const timeScale = Math.min(dt * 60, 4);
             const time = Date.now() / 1000;
 
-            if (!isLocked || !isPlayerLoaded) {
-                renderer.render(scene, camera);
-                return;
+            // NEW: Player Loaded check ensures game state is active
+            if (!isLocked && isPlayerLoaded) {
+                 // Still need to render even if not locked, to show the blocker/instructions
+                 renderer.render(scene, camera);
             }
 
+            if (!isLocked || !isPlayerLoaded) {
+                 return;
+            }
 
             if (!isClimbing) {
                 playerMesh.rotation.y = euler.y + Math.PI;
@@ -876,26 +909,8 @@
             updateAnimation(time);
 
 
-            camera.quaternion.setFromEuler(euler);
-            
-            let zDist = cameraZoom;
-            let yDist = Math.max(0, cameraZoom * 0.4); 
-            let xOffset = 1.5;
-            
-            if (cameraZoom < 1.0) {
-                xOffset = 0;
-                yDist = 0; 
-                zDist = -0.2; 
-                playerMesh.visible = false; 
-            } else {
-                playerMesh.visible = true;
-            }
-            
-            const camOffset = new THREE.Vector3(xOffset, 2 + yDist, zDist);
-            camOffset.applyEuler(euler);
-            camera.position.copy(playerMesh.position).add(camOffset);
-
-
+            // Ensure camera update runs every frame during the active game loop
+            updateCameraPosition();
             renderer.render(scene, camera);
         }
 
