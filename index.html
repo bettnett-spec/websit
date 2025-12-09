@@ -466,64 +466,66 @@
                 loadObjModel('hair.obj', 'hair.mtl'),
                 loadObjModel('backpack.obj', 'backpack.mtl')
             ]).catch(e => {
-                // Keep the error reporting, but remove the throw to allow the app to run without models
                 console.error("Failed to load one or more OBJ assets:", e);
                 loaderDiv.innerHTML = "Error loading models. Default player visible.";
                 isPlayerLoaded = true; // Still allow game to start with blocky player
                 return [null, null, null];
             });
-
+            
+            // --- Determine Visible Player and Set Camera Anchor ---
             if (faceObj && hairObj && backpackObj) {
-                // Set blocky mesh parts to invisible since we loaded custom ones
+                // Custom models loaded successfully: Use blocky skeleton but hide the default head/torso blocks.
+                
+                // Hide default head mesh
                 headMesh.visible = false;
                 
-                // Center the backpack on the back of the torso
-                backpackObj.position.set(0, 1.0, -0.25); // Torso center is Y=1.0, 0.25 back from center Z=0
-                backpackObj.scale.set(0.01, 0.01, 0.01); // Scale down dramatically (Roblox exports are huge)
-                torsoMesh.add(backpackObj); // Attach to the torso so it moves with the body
-
-                // Center Face/Hair on the head anchor point
-                // Note: OBJ assets from Roblox are often 100x too large, require scaling down and specific positioning/rotation
-                const headScale = 0.01; 
-                faceObj.scale.set(headScale, headScale, headScale);
-                hairObj.scale.set(headScale, headScale, headScale);
+                // Scale is often too large for Roblox models, must be reduced (0.01 = 1%)
+                const assetScale = 0.01; 
                 
-                // Position adjustment: Roblox OBJ models typically place the origin far from the head.
-                // These values (0, 0, 0) are placeholders. You may need to tweak them significantly 
-                // after testing the initial load, likely adding Y offset and rotating 180 degrees.
-                faceObj.position.set(0, -1.8, 0); 
-                hairObj.position.set(0, -1.8, 0); 
+                // BACKPACK: Attach to Torso. Positioned slightly behind the torso center.
+                backpackObj.position.set(0, 0, -0.25); // Relative to torsoMesh (Y=1.0)
+                backpackObj.scale.set(assetScale, assetScale, assetScale); 
+                torsoMesh.add(backpackObj); 
+                
+                // FACE & HAIR: Attach to HeadAnchor (the hidden head mesh)
+                // Head anchor is at Y=1.8 (relative to body root, which is at Y=0)
+                faceObj.scale.set(assetScale, assetScale, assetScale);
+                hairObj.scale.set(assetScale, assetScale, assetScale);
+                
+                // Positioning correction for Roblox models: They often need translation to match the pivot.
+                // We use small adjustments relative to the blocky head's pivot (1.8).
+                // Initial guess based on common Roblox export offset:
+                const headOffset = -1.8 / assetScale; // Needs to be massive offset if scale is tiny
+                
+                // Let's try adjusting the position on the OBJ meshes first.
+                // NOTE: Roblox exports often have rotation issues too, which need manual correction.
+                faceObj.position.set(0, 0, 0); 
+                hairObj.position.set(0, 0, 0); 
                 
                 headAnchor.add(faceObj);
                 headAnchor.add(hairObj);
-                
-                // --- Final Setup ---
-                group.position.copy(spawnPoint);
-                group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
 
-                scene.add(group);
-                playerMesh = group;
-                
-                // Store references to the rotating parts for the animation loop
-                playerMesh.userData = { 
-                    legL, legR, armL, armR, 
-                    faceObj, hairObj, backpackObj 
-                };
+                // Store references to the custom accessories
+                playerMesh.userData.faceObj = faceObj;
+                playerMesh.userData.hairObj = hairObj;
+                playerMesh.userData.backpackObj = backpackObj;
+
             } else {
-                 // Ensure playerMesh exists even if custom loading failed
-                 // In this case, it already contains the blocky parts, so nothing needed here.
+                // Custom models failed to load: Ensure blocky player is fully visible.
+                headMesh.visible = true;
+                // No custom objects to store, so they remain null in userData.
             }
-            
+
+            // Finalizing player setup
             group.position.copy(spawnPoint);
-            group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
             scene.add(group);
             playerMesh = group;
             
-            // Store references to the rotating parts for the animation loop
-            playerMesh.userData = { 
-                legL, legR, armL, armR, 
-                faceObj: faceObj, hairObj: hairObj, backpackObj: backpackObj 
-            };
+            // Re-assert that player is loaded (even if just the default blocky model is visible)
+            playerMesh.userData.legL = legL; 
+            playerMesh.userData.legR = legR; 
+            playerMesh.userData.armL = armL; 
+            playerMesh.userData.armR = armR; 
             isPlayerLoaded = true;
         }
 
@@ -537,6 +539,7 @@
             const limbs = playerMesh.userData;
 
             // Reset rotations (A clean starting state for all limbs)
+            // Note: This applies to blocky arms/legs, and any children attached to them.
             limbs.legL.rotation.set(0,0,0);
             limbs.legR.rotation.set(0,0,0);
             limbs.armL.rotation.set(0,0,0);
@@ -558,7 +561,8 @@
                  
                  // Backpack slight vertical movement while climbing
                  if (hasBackpack) {
-                    limbs.backpackObj.position.y = 1.0 + Math.sin(time * 10) * 0.05;
+                    // Position is relative to the Torso (Y=1.0)
+                    limbs.backpackObj.position.y = 0.0 + Math.sin(time * 10) * 0.05; 
                  }
             } else if (!isGrounded && airTime > 0.15) {
                 // JUMP ANIMATION: Arms and legs spread wide when airborne
@@ -574,7 +578,7 @@
                 
                 // Reset backpack position
                 if (hasBackpack) {
-                    limbs.backpackObj.position.y = 1.0; 
+                    limbs.backpackObj.position.y = 0.0; 
                 }
                 
             } else if (moveForward || moveBackward || moveLeft || moveRight) {
@@ -588,14 +592,14 @@
                 
                 // Reset backpack position
                 if (hasBackpack) {
-                    limbs.backpackObj.position.y = 1.0; 
+                    limbs.backpackObj.position.y = 0.0; 
                 }
             } else {
                 // STANDING / IDLE: Arms straight down, no animation.
                 
                 // Reset backpack position
                 if (hasBackpack) {
-                    limbs.backpackObj.position.y = 1.0; 
+                    limbs.backpackObj.position.y = 0.0; 
                 }
             }
 
