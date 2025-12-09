@@ -79,6 +79,21 @@
             z-index: 1002;
             display: none; /* Hidden by default */
         }
+        /* Custom progress bar styles */
+        #progress-container {
+            width: 250px;
+            height: 20px;
+            background: #555;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        #progress-bar {
+            height: 100%;
+            width: 0%;
+            background: #4CAF50;
+            transition: width 0.1s;
+        }
     </style>
 </head>
 <body>
@@ -87,7 +102,12 @@
     <div id="info">Stage: <span id="stage-display">1</span></div>
     <div id="checkpoint-msg">CHECKPOINT! NEXT LEVEL GENERATED</div>
     <div id="crosshair"></div>
-    <div id="loader">Loading 3D Assets...</div>
+    <div id="loader">
+        Loading 3D Assets...
+        <div id="progress-container">
+            <div id="progress-bar"></div>
+        </div>
+    </div>
 
 
     <div id="blocker">
@@ -177,6 +197,7 @@
         const instructions = document.getElementById('instructions');
         const crosshair = document.getElementById('crosshair');
         const loaderDiv = document.getElementById('loader');
+        const progressBar = document.getElementById('progress-bar'); // NEW
 
 
         // Sound Elements
@@ -366,35 +387,31 @@
         }
 
         /**
-         * Loads OBJ model files (using MTL for materials/textures).
-         * Uses FileLoader to explicitly load MTL content first for better pathing.
+         * Loads OBJ model files (using MTL for materials/textures) using a LoadingManager.
          * @param {string} objPath Path to the OBJ file.
          * @param {string} mtlPath Path to the MTL file.
+         * @param {THREE.LoadingManager} manager The manager for tracking progress.
          * @returns {Promise<THREE.Group>} A promise that resolves with the loaded object group.
          */
-        function loadObjModel(objPath, mtlPath) {
+        function loadObjModel(objPath, mtlPath, manager) {
             return new Promise((resolve, reject) => {
-                const fileLoader = new THREE.FileLoader();
-
+                const mtlLoader = new THREE.MTLLoader(manager);
+                
                 // Get the current base URL of the hosting environment
                 const baseUrl = window.location.href.split('#')[0];
                 const basePath = baseUrl.substring(0, baseUrl.lastIndexOf('/') + 1);
 
-                // 1. Load MTL content explicitly
-                fileLoader.load(mtlPath, function (mtlText) {
-                    const mtlLoader = new THREE.MTLLoader();
-                    
-                    // Set the resource path using the absolute base path found above
-                    mtlLoader.setResourcePath(basePath);
-                    
-                    const materials = mtlLoader.parse(mtlText);
+                // Set the resource path using the absolute base path found above
+                mtlLoader.setResourcePath(basePath);
+                
+                // Load MTL content
+                mtlLoader.load(mtlPath, function (materials) {
                     materials.preload();
                     
-                    // 2. Load OBJ content using the parsed materials
-                    const objLoader = new THREE.OBJLoader();
+                    const objLoader = new THREE.OBJLoader(manager);
                     objLoader.setMaterials(materials);
                     
-                    // Use the absolute path for the OBJ load as well for consistency
+                    // Load OBJ content
                     objLoader.load(objPath, function (object) {
                         object.traverse(child => {
                             if (child.isMesh) {
@@ -419,86 +436,93 @@
             const matSkin = new THREE.MeshLambertMaterial({ color: 0xFFFF00 }); // Yellow
 
 
-            // 1. Torso (Used for physics and root of character, made visible for structure)
+            // 1. Torso (Used for physics and root of character)
             torsoMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.5), matTorso);
             torsoMesh.position.y = 1;
             group.add(torsoMesh);
 
-            // 2. Head (Used for positioning, set to hidden later as the OBJ assets are the visible head)
+            // 2. Head (Used for positioning, set to invisible later if custom head loads)
             headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matSkin);
             headMesh.position.y = 1.8;
             group.add(headMesh);
             
-            // The head is used as the anchor point for all facial/hair OBJs
             const headAnchor = headMesh; 
 
-            // 3. Left Leg (Requires X/Z rotation in updateAnimation)
+            // 3. Left Leg 
             const legGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
             legGeo.translate(0, -0.5, 0); // Pivot at Hip
             const legL = new THREE.Mesh(legGeo, matPants);
             legL.position.set(-0.25, 0.5, 0); 
             group.add(legL);
 
-            // 4. Right Leg (Requires X/Z rotation in updateAnimation)
+            // 4. Right Leg 
             const legR = new THREE.Mesh(legGeo, matPants);
             legR.position.set(0.25, 0.5, 0); 
             group.add(legR);
 
-            // 5. Left Arm (Requires X/Z rotation in updateAnimation)
+            // 5. Left Arm 
             const armGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
             armGeo.translate(0, -0.5, 0); // Pivot at Shoulder
             const armL = new THREE.Mesh(armGeo, matSkin);
-            // Positioned to prevent clipping/detachment during rotation
             armL.position.set(-0.7, 1.5, 0); 
             armL.rotation.z = 0; 
             group.add(armL);
 
-            // 6. Right Arm (Requires X/Z rotation in updateAnimation)
+            // 6. Right Arm 
             const armR = new THREE.Mesh(armGeo, matSkin);
             armR.position.set(0.7, 1.5, 0); 
             armR.rotation.z = 0; 
             group.add(armR);
-
+            
+            // Initial player setup (for camera anchor)
+            playerMesh = group;
+            playerMesh.position.copy(spawnPoint);
+            scene.add(playerMesh);
 
             // --- Load Custom OBJ Assets ---
+            // Use LoadingManager to monitor all file loads
+            const manager = new THREE.LoadingManager();
+            let totalItems = 3;
+            let itemsLoaded = 0;
+
+            manager.onProgress = function (item, loaded, total) {
+                // Ensure progress only reflects the 3 main objects loading
+                if (loaded <= totalItems) {
+                    const progress = Math.min(100, (loaded / totalItems) * 100);
+                    progressBar.style.width = progress + '%';
+                }
+            };
+
             const [faceObj, hairObj, backpackObj] = await Promise.all([
-                loadObjModel('face.obj', 'face.mtl'),
-                loadObjModel('hair.obj', 'hair.mtl'),
-                loadObjModel('backpack.obj', 'backpack.mtl')
+                loadObjModel('face.obj', 'face.mtl', manager),
+                loadObjModel('hair.obj', 'hair.mtl', manager),
+                loadObjModel('backpack.obj', 'backpack.mtl', manager)
             ]).catch(e => {
                 console.error("Failed to load one or more OBJ assets:", e);
                 loaderDiv.innerHTML = "Error loading models. Default player visible.";
-                isPlayerLoaded = true; // Still allow game to start with blocky player
                 return [null, null, null];
             });
             
-            // --- Determine Visible Player and Set Camera Anchor ---
+            // --- Determine Visible Player and Attach Assets ---
             if (faceObj && hairObj && backpackObj) {
-                // Custom models loaded successfully: Use blocky skeleton but hide the default head/torso blocks.
+                // Custom models loaded successfully
                 
                 // Hide default head mesh
                 headMesh.visible = false;
                 
-                // Scale is often too large for Roblox models, must be reduced (0.01 = 1%)
+                // Scale is often too large for Roblox models
                 const assetScale = 0.01; 
                 
-                // BACKPACK: Attach to Torso. Positioned slightly behind the torso center.
+                // BACKPACK: Attach to Torso. 
                 backpackObj.position.set(0, 0, -0.25); // Relative to torsoMesh (Y=1.0)
                 backpackObj.scale.set(assetScale, assetScale, assetScale); 
                 torsoMesh.add(backpackObj); 
                 
                 // FACE & HAIR: Attach to HeadAnchor (the hidden head mesh)
-                // Head anchor is at Y=1.8 (relative to body root, which is at Y=0)
                 faceObj.scale.set(assetScale, assetScale, assetScale);
                 hairObj.scale.set(assetScale, assetScale, assetScale);
                 
-                // Positioning correction for Roblox models: They often need translation to match the pivot.
-                // We use small adjustments relative to the blocky head's pivot (1.8).
-                // Initial guess based on common Roblox export offset:
-                const headOffset = -1.8 / assetScale; // Needs to be massive offset if scale is tiny
-                
-                // Let's try adjusting the position on the OBJ meshes first.
-                // NOTE: Roblox exports often have rotation issues too, which need manual correction.
+                // NOTE: Positioning here might need manual adjustment based on visual test
                 faceObj.position.set(0, 0, 0); 
                 hairObj.position.set(0, 0, 0); 
                 
@@ -513,20 +537,11 @@
             } else {
                 // Custom models failed to load: Ensure blocky player is fully visible.
                 headMesh.visible = true;
-                // No custom objects to store, so they remain null in userData.
+                // Note: If model loading fails, we skip storing the OBJ refs, but the blocky refs are already present.
             }
 
-            // Finalizing player setup
-            group.position.copy(spawnPoint);
-            scene.add(group);
-            playerMesh = group;
-            
-            // Re-assert that player is loaded (even if just the default blocky model is visible)
-            playerMesh.userData.legL = legL; 
-            playerMesh.userData.legR = legR; 
-            playerMesh.userData.armL = armL; 
-            playerMesh.userData.armR = armR; 
-            isPlayerLoaded = true;
+            // Final preparation: ensure shadows are set
+            playerMesh.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
         }
 
 
@@ -539,7 +554,6 @@
             const limbs = playerMesh.userData;
 
             // Reset rotations (A clean starting state for all limbs)
-            // Note: This applies to blocky arms/legs, and any children attached to them.
             limbs.legL.rotation.set(0,0,0);
             limbs.legR.rotation.set(0,0,0);
             limbs.armL.rotation.set(0,0,0);
@@ -561,7 +575,6 @@
                  
                  // Backpack slight vertical movement while climbing
                  if (hasBackpack) {
-                    // Position is relative to the Torso (Y=1.0)
                     limbs.backpackObj.position.y = 0.0 + Math.sin(time * 10) * 0.05; 
                  }
             } else if (!isGrounded && airTime > 0.15) {
