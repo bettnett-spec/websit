@@ -325,11 +325,10 @@
         function createPlayer() {
             const group = new THREE.Group();
             
-            // Materials (Classic Noob)
-            const matHead = new THREE.MeshLambertMaterial({ color: 0xFFFF00 }); // Yellow
-            const matTorso = new THREE.MeshLambertMaterial({ color: 0x0000FF }); // Blue
-            const matPants = new THREE.MeshLambertMaterial({ color: 0x00FF00 }); // Green
-            const matSkin = matHead; // Re-use
+            // Materials (Updated Colors)
+            const matSkin = new THREE.MeshLambertMaterial({ color: 0xFFE0BD }); // Peach
+            const matTorso = new THREE.MeshLambertMaterial({ color: 0xADD8E6 }); // Light Blue
+            const matPants = new THREE.MeshLambertMaterial({ color: 0xF5F5F5 }); // Off White
 
             // 1. Torso (Simple Box)
             const torso = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.5), matTorso);
@@ -337,7 +336,7 @@
             group.add(torso);
 
             // 2. Head (Simple Box)
-            const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matHead);
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matSkin);
             head.position.y = 1.8;
             group.add(head);
 
@@ -356,18 +355,23 @@
             // 5. Left Arm
             const armGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
             armGeo.translate(0, -0.5, 0); // Pivot at Shoulder
-            const armL = new THREE.Mesh(armGeo, matSkin);
+            const armL = new THREE.Mesh(armGeo, matTorso); // Light Blue Sleeves
             armL.position.set(-0.75, 1.5, 0); 
             // Tuck in
             armL.rotation.z = 0.1;
             group.add(armL);
 
             // 6. Right Arm
-            const armR = new THREE.Mesh(armGeo, matSkin);
+            const armR = new THREE.Mesh(armGeo, matTorso); // Light Blue Sleeves
             armR.position.set(0.75, 1.5, 0); 
             // Tuck in
             armR.rotation.z = -0.1;
             group.add(armR);
+            
+            // Hands (Optional detail to match skin)
+            // Just tint the bottom of the arm? No, keep it simple single mesh per block per request.
+            // If you want hands distinct, I would need to split the mesh.
+            // For now, full sleeve look (Light Blue).
 
             group.position.copy(spawnPoint);
             group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
@@ -404,7 +408,7 @@
                  limbs.legL.rotation.x = -0.2; 
                  limbs.legR.rotation.x = -0.3;
             } else if (!isGrounded && airTime > 0.15) {
-                // JUMP ANIMATION (Corrected: Side Split)
+                // JUMP ANIMATION (Fixed: Side Split)
                 // Use Z axis for Side-to-Side
                 limbs.legL.rotation.z = 0.4;  // Out Left
                 limbs.legR.rotation.z = -0.4; // Out Right
