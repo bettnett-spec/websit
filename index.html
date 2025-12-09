@@ -387,7 +387,7 @@
         }
 
         /**
-         * Loads OBJ model files (using MTL for materials/textures) using a LoadingManager.
+         * Loads OBJ model files (using MTL for materials/textures).
          * @param {string} objPath Path to the OBJ file.
          * @param {string} mtlPath Path to the MTL file.
          * @param {THREE.LoadingManager} manager The manager for tracking progress.
@@ -397,15 +397,20 @@
             return new Promise((resolve, reject) => {
                 const mtlLoader = new THREE.MTLLoader(manager);
                 
-                // Get the current base URL of the hosting environment
-                const baseUrl = window.location.href.split('#')[0];
-                const basePath = baseUrl.substring(0, baseUrl.lastIndexOf('/') + 1);
-
-                // Set the resource path using the absolute base path found above
-                mtlLoader.setResourcePath(basePath);
+                // Set the resource path explicitly to an empty string to prevent the loader
+                // from attempting to fetch texture files (Handle1_diff.png) which are likely missing or mis-pathed.
+                mtlLoader.setResourcePath(''); // Prevents Invalid URL error for missing textures
                 
                 // Load MTL content
                 mtlLoader.load(mtlPath, function (materials) {
+                    // Force using a simple Lambert/Standard material as a fallback
+                    const defaultMaterial = new THREE.MeshStandardMaterial({
+                        color: 0xcccccc, // Gray default color
+                        metalness: 0.1,
+                        roughness: 0.8
+                    });
+
+                    // Parse the MTL to get object structure, but manually apply the simple material
                     materials.preload();
                     
                     const objLoader = new THREE.OBJLoader(manager);
@@ -416,6 +421,8 @@
                         object.traverse(child => {
                             if (child.isMesh) {
                                 child.castShadow = true;
+                                // Apply the simple material fallback
+                                child.material = defaultMaterial;
                             }
                         });
                         resolve(object);
@@ -482,24 +489,26 @@
             // --- Load Custom OBJ Assets ---
             // Use LoadingManager to monitor all file loads
             const manager = new THREE.LoadingManager();
-            let totalItems = 3;
-            let itemsLoaded = 0;
+            let totalItems = 3; // Total main OBJ files to load
 
             manager.onProgress = function (item, loaded, total) {
                 // Ensure progress only reflects the 3 main objects loading
+                // Note: MTL and textures are counted in 'total', but we only want to track the OBJs.
+                // We'll track progress based on the 3 main OBJ assets.
                 if (loaded <= totalItems) {
                     const progress = Math.min(100, (loaded / totalItems) * 100);
                     progressBar.style.width = progress + '%';
                 }
             };
-
+            
+            // The catch block here will ensure the promises resolve even if loading textures fails internally.
             const [faceObj, hairObj, backpackObj] = await Promise.all([
                 loadObjModel('face.obj', 'face.mtl', manager),
                 loadObjModel('hair.obj', 'hair.mtl', manager),
                 loadObjModel('backpack.obj', 'backpack.mtl', manager)
             ]).catch(e => {
                 console.error("Failed to load one or more OBJ assets:", e);
-                loaderDiv.innerHTML = "Error loading models. Default player visible.";
+                loaderDiv.innerHTML = "Error loading custom assets. Default player active.";
                 return [null, null, null];
             });
             
@@ -523,6 +532,8 @@
                 hairObj.scale.set(assetScale, assetScale, assetScale);
                 
                 // NOTE: Positioning here might need manual adjustment based on visual test
+                // The position (0, 0, 0) relative to the head mesh is usually wrong for Roblox OBJs.
+                // You may need to manually inspect the model and adjust these values if it's misplaced.
                 faceObj.position.set(0, 0, 0); 
                 hairObj.position.set(0, 0, 0); 
                 
@@ -537,11 +548,11 @@
             } else {
                 // Custom models failed to load: Ensure blocky player is fully visible.
                 headMesh.visible = true;
-                // Note: If model loading fails, we skip storing the OBJ refs, but the blocky refs are already present.
             }
 
             // Final preparation: ensure shadows are set
             playerMesh.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
+            isPlayerLoaded = true; // Mark as loaded, whether custom or default.
         }
 
 
