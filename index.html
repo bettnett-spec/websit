@@ -367,6 +367,7 @@
             window.addEventListener('resize', onWindowResize);
             
             instructions.addEventListener('click', function() {
+                // If isPlayerLoaded is true, we know the main initialization finished.
                 if(!isPlayerLoaded) return;
                 
                 if(sfxJump) { 
@@ -381,6 +382,7 @@
             document.addEventListener('pointerlockchange', pointerLockChange);
             document.addEventListener('mousemove', onMouseMove);
 
+            // This ensures the loader is hidden and instructions shown AFTER everything loads.
             loaderDiv.style.display = 'none';
             instructions.style.display = 'block';
             animate();
@@ -492,9 +494,7 @@
             let totalItems = 3; // Total main OBJ files to load
 
             manager.onProgress = function (item, loaded, total) {
-                // Ensure progress only reflects the 3 main objects loading
-                // Note: MTL and textures are counted in 'total', but we only want to track the OBJs.
-                // We'll track progress based on the 3 main OBJ assets.
+                // We track progress based on the 3 main OBJ assets to show a bar increase
                 if (loaded <= totalItems) {
                     const progress = Math.min(100, (loaded / totalItems) * 100);
                     progressBar.style.width = progress + '%';
@@ -533,7 +533,6 @@
                 
                 // NOTE: Positioning here might need manual adjustment based on visual test
                 // The position (0, 0, 0) relative to the head mesh is usually wrong for Roblox OBJs.
-                // You may need to manually inspect the model and adjust these values if it's misplaced.
                 faceObj.position.set(0, 0, 0); 
                 hairObj.position.set(0, 0, 0); 
                 
