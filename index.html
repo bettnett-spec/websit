@@ -314,48 +314,29 @@
             nextStageStart.set(curX, curY, curZ - 6);
         }
 
-        // --- Custom Face Texture ---
-        function createFaceTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 128; canvas.height = 128;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#FFE0BD'; ctx.fillRect(0,0,128,128); // Peach Skin
-            ctx.fillStyle = 'black';
-            ctx.beginPath(); ctx.arc(40, 50, 10, 0, Math.PI*2); ctx.fill(); // L Eye
-            ctx.beginPath(); ctx.arc(88, 50, 10, 0, Math.PI*2); ctx.fill(); // R Eye
-            ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(64, 60, 20, 0.2, Math.PI-0.2); ctx.stroke(); // Smile
-            return new THREE.CanvasTexture(canvas);
-        }
-
-        // --- Player Creation (Original Blocky + Accessories) ---
+        // --- Player Creation (Original Blocky) ---
         function createPlayer() {
             const group = new THREE.Group();
             
-            // Materials
-            const matSkin = new THREE.MeshLambertMaterial({ color: 0xFFE0BD }); // Peach
+            // Materials (Classic Noob)
+            const matHead = new THREE.MeshLambertMaterial({ color: 0xFFFF00 }); // Yellow
             const matTorso = new THREE.MeshLambertMaterial({ color: 0x0000FF }); // Blue
             const matPants = new THREE.MeshLambertMaterial({ color: 0x00FF00 }); // Green
-            const matHair = new THREE.MeshLambertMaterial({ color: 0x5C4033 }); // Brown
-            const matAcc = new THREE.MeshLambertMaterial({ color: 0xFFFFFF }); // White
+            const matSkin = matHead; // Re-use
 
-            // 1. Torso
+            // 1. Torso (Simple Box)
             const torso = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.5), matTorso);
             torso.position.y = 1;
             group.add(torso);
 
-            // 2. Head
-            const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), [matSkin, matSkin, matSkin, matSkin, new THREE.MeshBasicMaterial({map:createFaceTexture()}), matSkin]);
+            // 2. Head (Simple Box)
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matHead);
             head.position.y = 1.8;
             group.add(head);
-            
-            // Hair (Blocky)
-            const hair = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.2, 0.65), matHair);
-            hair.position.y = 0.3;
-            head.add(hair);
 
             // 3. Left Leg
             const legGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
-            legGeo.translate(0, -0.5, 0); 
+            legGeo.translate(0, -0.5, 0); // Pivot at Hip
             const legL = new THREE.Mesh(legGeo, matPants);
             legL.position.set(-0.25, 0.5, 0); 
             group.add(legL);
@@ -367,22 +348,19 @@
 
             // 5. Left Arm
             const armGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
-            armGeo.translate(0, -0.5, 0); 
+            armGeo.translate(0, -0.5, 0); // Pivot at Shoulder
             const armL = new THREE.Mesh(armGeo, matSkin);
             armL.position.set(-0.75, 1.5, 0); 
+            // Tuck in
             armL.rotation.z = 0.1;
             group.add(armL);
 
             // 6. Right Arm
             const armR = new THREE.Mesh(armGeo, matSkin);
             armR.position.set(0.75, 1.5, 0); 
+            // Tuck in
             armR.rotation.z = -0.1;
             group.add(armR);
-            
-            // Backpack (Blocky)
-            const pack = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.25), matAcc);
-            pack.position.set(0, 0, -0.375);
-            torso.add(pack);
 
             group.position.copy(spawnPoint);
             group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
@@ -410,6 +388,7 @@
             if (isClimbing) {
                  limbs.armL.rotation.x = -Math.PI; 
                  limbs.armR.rotation.x = -Math.PI; 
+                 
                  if (climbPhase === 1 && climbTimer > 0.1) {
                      limbs.armL.rotation.x = -Math.PI / 2;
                      limbs.armR.rotation.x = -Math.PI / 2;
@@ -417,17 +396,16 @@
                  limbs.legL.rotation.x = -0.2; 
                  limbs.legR.rotation.x = -0.3;
             } else if (!isGrounded && airTime > 0.15) {
-                // JUMP ANIMATION (CORRECTED)
-                // In Three.js for this setup:
-                // Left Leg: positive Z rotates it OUT to the left
-                // Right Leg: negative Z rotates it OUT to the right
+                // JUMP ANIMATION (CORRECTED: Swapped signs for Outwards motion)
+                // Left Leg: -Z rotates OUT to the left
+                // Right Leg: +Z rotates OUT to the right
                 
-                limbs.legL.rotation.z = 0.4;  // Out Left
-                limbs.legR.rotation.z = -0.4; // Out Right
+                limbs.legL.rotation.z = -0.4;  // OUTWARDS LEFT
+                limbs.legR.rotation.z = 0.4; // OUTWARDS RIGHT
 
-                // Arms Out
+                // Arms Up and Out 
                 limbs.armL.rotation.z = 0.8; // Out Left 
-                limbs.armR.rotation.z = -0.8; // Out Right 
+                limbs.armR.rotation.z = -0.8;  // Out Right 
             } else if (moveForward || moveBackward || moveLeft || moveRight) {
                 const speed = isShiftPressed ? 5 : 10;
                 const angle = Math.sin(time * speed) * 0.8;
