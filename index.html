@@ -191,6 +191,108 @@
 
         init();
         
+        // --- Level Generation Functions (Moved up to fix ReferenceError) ---
+        function createPlatform(x, y, z, w, h, d, color, type = 'normal') {
+            const geometry = new THREE.BoxGeometry(w, h, d);
+            const material = new THREE.MeshLambertMaterial({ color: color });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+
+
+            const platformData = {
+                mesh: mesh,
+                box: new THREE.Box3().setFromObject(mesh), 
+                width: w,
+                height: h,
+                depth: d,
+                type: type,
+                stage: currentStage
+            };
+            platforms.push(platformData);
+            return mesh;
+        }
+
+
+        function generateRandomStage() {
+            const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+            const stageColor = colors[Math.floor(Math.random() * colors.length)];
+            
+            let curX = nextStageStart.x;
+            let curY = nextStageStart.y;
+            let curZ = nextStageStart.z;
+
+
+            const obstaclesCount = 5 + Math.floor(Math.random() * 4); 
+
+
+            for (let i = 0; i < obstaclesCount; i++) {
+                const r = Math.random();
+                const gap = 2.5 + Math.random() * 3.0;
+                
+                const driftX = (Math.random() - 0.5) * 8; 
+                const driftY = (Math.random() - 0.4) * 2; 
+
+
+                curZ -= gap;
+                curX += driftX;
+                curY += driftY;
+                
+                if(curX > 40) curX = 40;
+                if(curX < -40) curX = -40;
+
+
+                if (r < 0.3) {
+                    const w = 3 + Math.random() * 3;
+                    const d = 3 + Math.random() * 3;
+                    curZ -= d/2;
+                    createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    curZ -= d/2;
+                } 
+                else if (r < 0.5) {
+                    const len = 8 + Math.random() * 6;
+                    createPlatform(curX, curY, curZ - len/2, 4, 1, len, 0x333333);
+                    const lavaCount = Math.floor(len / 4); 
+                    for(let k=0; k<lavaCount; k++) {
+                        const lZ = curZ - (k * 4) - 2;
+                        createPlatform(curX, curY + 0.6, lZ, 3.5, 0.2, 1.0, 0xff0000, 'lava');
+                    }
+                    curZ -= len;
+                }
+                else if (r < 0.7) {
+                     const len = 6 + Math.random() * 6;
+                     curZ -= len/2;
+                     createPlatform(curX, curY, curZ, 1.2, 1, len, stageColor);
+                     curZ -= len/2;
+                }
+                else {
+                    const steps = 3 + Math.floor(Math.random()*3);
+                    for(let s=0; s<steps; s++) {
+                        curZ -= 2.5; 
+                        curX += (Math.random() - 0.5) * 5; 
+                        curY += (Math.random() - 0.3) * 1.5; 
+                        createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
+                    }
+                }
+            }
+
+
+            curZ -= 4;
+            createPlatform(curX, curY, curZ - 3, 8, 1, 6, 0x00FF00, 'checkpoint');
+            
+            const geo = new THREE.CylinderGeometry(0.5, 0.5, 5);
+            const mat = new THREE.MeshBasicMaterial({color: 0xffff00});
+            const pole = new THREE.Mesh(geo, mat);
+            pole.position.set(curX + 3, curY + 2.5, curZ - 3);
+            scene.add(pole);
+
+
+            nextStageStart.set(curX, curY, curZ - 6);
+        }
+
+        
         // --- Core Initialization ---
         async function init() {
             clock = new THREE.Clock();
@@ -202,7 +304,7 @@
 
             // 1. Scene Setup
             scene = new THREE.Scene();
-            scene.background = new new THREE.Color(0x87CEEB); 
+            scene.background = new THREE.Color(0x87CEEB); 
             scene.fog = new THREE.Fog(0x87CEEB, 20, 150);
 
             // 2. Camera (FOV 85)
@@ -265,19 +367,26 @@
 
         /**
          * Loads OBJ model files (using MTL for materials/textures).
+         * Uses FileLoader to explicitly load MTL content first for better pathing.
          * @param {string} objPath Path to the OBJ file.
          * @param {string} mtlPath Path to the MTL file.
          * @returns {Promise<THREE.Group>} A promise that resolves with the loaded object group.
          */
         function loadObjModel(objPath, mtlPath) {
             return new Promise((resolve, reject) => {
-                const mtlLoader = new THREE.MTLLoader();
-                // Crucially, set the base path for textures BEFORE loading the MTL file.
-                // This assumes all texture files mentioned in the MTL are in the same folder as the MTL/OBJ.
-                mtlLoader.setPath('./'); 
-                
-                mtlLoader.load(mtlPath, function (materials) {
+                const fileLoader = new THREE.FileLoader();
+
+                // 1. Load MTL content explicitly
+                fileLoader.load(mtlPath, function (mtlText) {
+                    const mtlLoader = new THREE.MTLLoader();
+                    
+                    // Set the base path for textures explicitly to the current directory
+                    mtlLoader.setResourcePath('./');
+                    
+                    const materials = mtlLoader.parse(mtlText);
                     materials.preload();
+                    
+                    // 2. Load OBJ content using the parsed materials
                     const objLoader = new THREE.OBJLoader();
                     objLoader.setMaterials(materials);
                     
@@ -289,6 +398,7 @@
                         });
                         resolve(object);
                     }, undefined, reject);
+                    
                 }, undefined, reject);
             });
         }
