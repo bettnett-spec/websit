@@ -69,9 +69,11 @@
 </head>
 <body>
 
+
     <div id="info">Stage: <span id="stage-display">1</span></div>
     <div id="checkpoint-msg">CHECKPOINT! NEXT LEVEL GENERATED</div>
     <div id="crosshair"></div>
+
 
     <div id="blocker">
         <div id="instructions">
@@ -85,6 +87,7 @@
         </div>
     </div>
 
+
     <!-- SOUND EFFECTS -->
     <audio id="sfx-jump" src="jump.mp3"></audio>
     <audio id="sfx-check" src="checkpoint.wav"></audio>
@@ -92,8 +95,10 @@
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
 
+
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
 
     <script>
         // --- Game Constants ---
@@ -151,6 +156,7 @@
         const instructions = document.getElementById('instructions');
         const crosshair = document.getElementById('crosshair');
 
+
         // Sound Elements
         const sfxJump = document.getElementById('sfx-jump');
         const sfxCheck = document.getElementById('sfx-check');
@@ -160,16 +166,20 @@
         
         if(sfxWalk) sfxWalk.volume = 0.4; 
 
+
         init();
         animate();
 
+
         function init() {
             clock = new THREE.Clock();
+
 
             // 1. Scene Setup
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87CEEB); 
             scene.fog = new THREE.Fog(0x87CEEB, 20, 150);
+
 
             // 2. Camera (FOV 85)
             camera = new THREE.PerspectiveCamera(85, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -179,6 +189,7 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
             document.body.appendChild(renderer.domElement);
+
 
             // 4. Lighting
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -195,13 +206,16 @@
             dirLight.shadow.mapSize.height = 2048;
             scene.add(dirLight);
 
+
             // 5. Create Player
             createPlayer();
+
 
             // 6. Create Initial Level
             createPlatform(0, 0, 0, 10, 1, 10, 0xaaaaaa, 'spawn'); 
             nextStageStart.set(0, 0, -5); 
             generateRandomStage();
+
 
             // 7. Event Listeners
             document.addEventListener('keydown', onKeyDown);
@@ -221,6 +235,7 @@
             document.addEventListener('mousemove', onMouseMove);
         }
 
+
         // --- Level Generation ---
         function createPlatform(x, y, z, w, h, d, color, type = 'normal') {
             const geometry = new THREE.BoxGeometry(w, h, d);
@@ -230,6 +245,7 @@
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             scene.add(mesh);
+
 
             const platformData = {
                 mesh: mesh,
@@ -244,6 +260,7 @@
             return mesh;
         }
 
+
         function generateRandomStage() {
             const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
             const stageColor = colors[Math.floor(Math.random() * colors.length)];
@@ -252,7 +269,9 @@
             let curY = nextStageStart.y;
             let curZ = nextStageStart.z;
 
+
             const obstaclesCount = 5 + Math.floor(Math.random() * 4); 
+
 
             for (let i = 0; i < obstaclesCount; i++) {
                 const r = Math.random();
@@ -261,12 +280,14 @@
                 const driftX = (Math.random() - 0.5) * 8; 
                 const driftY = (Math.random() - 0.4) * 2; 
 
+
                 curZ -= gap;
                 curX += driftX;
                 curY += driftY;
                 
                 if(curX > 40) curX = 40;
                 if(curX < -40) curX = -40;
+
 
                 if (r < 0.3) {
                     const w = 3 + Math.random() * 3;
@@ -302,6 +323,7 @@
                 }
             }
 
+
             curZ -= 4;
             createPlatform(curX, curY, curZ - 3, 8, 1, 6, 0x00FF00, 'checkpoint');
             
@@ -311,8 +333,10 @@
             pole.position.set(curX + 3, curY + 2.5, curZ - 3);
             scene.add(pole);
 
+
             nextStageStart.set(curX, curY, curZ - 6);
         }
+
 
         // --- Player Creation (Original Blocky) ---
         function createPlayer() {
@@ -324,15 +348,18 @@
             const matPants = new THREE.MeshLambertMaterial({ color: 0x00FF00 }); // Green
             const matSkin = matHead; // Re-use
 
+
             // 1. Torso (Simple Box)
             const torso = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.5), matTorso);
             torso.position.y = 1;
             group.add(torso);
 
+
             // 2. Head (Simple Box)
             const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matHead);
             head.position.y = 1.8;
             group.add(head);
+
 
             // 3. Left Leg
             const legGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
@@ -341,10 +368,12 @@
             legL.position.set(-0.25, 0.5, 0); 
             group.add(legL);
 
+
             // 4. Right Leg
             const legR = new THREE.Mesh(legGeo, matPants);
             legR.position.set(0.25, 0.5, 0); 
             group.add(legR);
+
 
             // 5. Left Arm
             const armGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
@@ -355,6 +384,7 @@
             armL.rotation.z = 0.1;
             group.add(armL);
 
+
             // 6. Right Arm
             const armR = new THREE.Mesh(armGeo, matSkin);
             armR.position.set(0.75, 1.5, 0); 
@@ -362,8 +392,10 @@
             armR.rotation.z = -0.1;
             group.add(armR);
 
+
             group.position.copy(spawnPoint);
             group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
+
 
             scene.add(group);
             playerMesh = group;
@@ -371,9 +403,11 @@
             playerMesh.userData = { legL, legR, armL, armR };
         }
 
+
         function updateAnimation(time) {
             if (!playerMesh || !playerMesh.userData) return;
             const limbs = playerMesh.userData;
+
 
             // Reset
             limbs.legL.rotation.set(0,0,0);
@@ -381,9 +415,11 @@
             limbs.armL.rotation.set(0,0,0);
             limbs.armR.rotation.set(0,0,0);
 
+
             // Default Tucked Arms
             limbs.armL.rotation.z = 0.1;
             limbs.armR.rotation.z = -0.1;
+
 
             if (isClimbing) {
                  limbs.armL.rotation.x = -Math.PI; 
@@ -396,16 +432,16 @@
                  limbs.legL.rotation.x = -0.2; 
                  limbs.legR.rotation.x = -0.3;
             } else if (!isGrounded && airTime > 0.15) {
-                // JUMP ANIMATION (CORRECTED: OUTWARDS)
-                // Left Leg: -Z rotates OUT to the left
-                // Right Leg: +Z rotates OUT to the right
+                // JUMP ANIMATION (FIXED: Outwards Swing)
                 
+                // Legs (Outwards/Mirrored Z rotation)
                 limbs.legL.rotation.z = -0.4;  // OUTWARDS LEFT
                 limbs.legR.rotation.z = 0.4; // OUTWARDS RIGHT
 
-                // Arms Up and Out 
-                limbs.armL.rotation.z = 0.8; // Out Left 
-                limbs.armR.rotation.z = -0.8;  // Out Right 
+
+                // Arms (Outwards/Mirrored Z rotation - signs flipped from your last upload)
+                limbs.armL.rotation.z = -0.8; // OUTWARDS LEFT (Swapped sign)
+                limbs.armR.rotation.z = 0.8;  // OUTWARDS RIGHT (Swapped sign)
             } else if (moveForward || moveBackward || moveLeft || moveRight) {
                 const speed = isShiftPressed ? 5 : 10;
                 const angle = Math.sin(time * speed) * 0.8;
@@ -415,6 +451,7 @@
                 limbs.armR.rotation.x = -angle;
             }
         }
+
 
         // --- Input Handling ---
         function onKeyDown(event) {
@@ -431,6 +468,7 @@
             }
         }
 
+
         function onKeyUp(event) {
             switch (event.code) {
                 case 'ArrowUp': case 'KeyW': moveForward = false; break;
@@ -442,10 +480,12 @@
             }
         }
 
+
         function onScroll(event) {
             cameraZoom += event.deltaY * 0.01;
             cameraZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, cameraZoom));
         }
+
 
         function pointerLockChange() {
             if (document.pointerLockElement === document.body) {
@@ -460,6 +500,7 @@
             }
         }
 
+
         function onMouseMove(event) {
             if (!isLocked) return;
             const movementX = event.movementX || 0;
@@ -470,6 +511,7 @@
             euler.x = Math.max(-limit, Math.min(limit, euler.x));
         }
 
+
         // --- Physics Loop ---
         function respawn(type) {
             playerMesh.position.copy(spawnPoint);
@@ -479,11 +521,12 @@
             
             // SFX
             if (type === 'fire') {
-                if(sfxFire) { sfxFire.currentTime = 0; sfxFire.play(); }
+                if(sfxFire) { sfxFire.currentTime = 0; sfxFire.play().catch(e => {}); }
             } else {
-                if(sfxDeath) { sfxDeath.currentTime = 0; sfxDeath.play(); }
+                if(sfxDeath) { sfxDeath.currentTime = 0; sfxDeath.play().catch(e => {}); }
             }
         }
+
 
         function startClimb(p, halfW, halfD, radius, topY) {
             isClimbing = true;
@@ -491,6 +534,7 @@
             climbTimer = 0;
             playerVelocity.set(0, 0, 0);
             momentum.set(0, 0, 0);
+
 
             const pPos = p.mesh.position;
             const px = playerMesh.position.x;
@@ -513,9 +557,11 @@
             const hangY = topY - 1.2; 
             const endY = topY + 0.5;
 
+
             // Set Start Pos (Snapped to wall)
             climbStartPos.set(px, hangY, pz);
             climbTargetPos.set(px, endY, pz);
+
 
             const pushIn = 0.5; 
             
@@ -539,6 +585,7 @@
             
             playerMesh.position.copy(climbStartPos);
         }
+
 
         function checkPhysics(dt) {
             // Climbing Physics
@@ -566,7 +613,8 @@
                         
                         momentum.set(Math.sin(finalAngle), 0, Math.cos(finalAngle)).multiplyScalar(0.5); 
                         
-                        if(sfxJump) { sfxJump.currentTime=0; sfxJump.play(); }
+                        if(sfxJump) { sfxJump.currentTime=0; sfxJump.play().catch(e => {}); }
+
 
                         return;
                     }
@@ -590,23 +638,28 @@
                 return;
             }
 
+
             const playerRadius = 0.4;
             let onGround = false;
             let hitLedge = false;
             let ledgePlatform = null; 
+
 
             const nextX = playerMesh.position.x; 
             const nextZ = playerMesh.position.z;
             const feetY = playerMesh.position.y - 0.5;
             const headY = playerMesh.position.y + 1.0;
 
+
             for (let p of platforms) {
                 if (Math.abs(p.mesh.position.z - nextZ) > 10 && Math.abs(p.mesh.position.x - nextX) > 10) continue;
+
 
                 const pPos = p.mesh.position;
                 const halfW = p.width / 2;
                 const halfD = p.depth / 2;
                 const halfH = p.height / 2;
+
 
                 const minX = pPos.x - halfW - playerRadius;
                 const maxX = pPos.x + halfW + playerRadius;
@@ -614,6 +667,7 @@
                 const maxZ = pPos.z + halfD + playerRadius;
                 const minY = pPos.y - halfH;
                 const maxY = pPos.y + halfH;
+
 
                 if (nextX > minX && nextX < maxX && nextZ > minZ && nextZ < maxZ) {
                     if (feetY < maxY && headY > minY) {
@@ -659,15 +713,19 @@
                 }
             }
 
+
             isGrounded = onGround;
+
 
             if (!isGrounded && hitLedge && ledgePlatform && airTime > 0.1) {
                 const topY = ledgePlatform.mesh.position.y + ledgePlatform.height/2;
                 startClimb(ledgePlatform, ledgePlatform.width/2, ledgePlatform.depth/2, playerRadius, topY);
             }
 
+
             if (playerMesh.position.y < -30) respawn('fall');
         }
+
 
         function triggerCheckpoint(p) {
             if(!p.triggered) {
@@ -680,11 +738,12 @@
                 msg.style.opacity = 1;
                 setTimeout(() => { msg.style.opacity = 0; }, 2000);
                 
-                if(sfxCheck) { sfxCheck.currentTime=0; sfxCheck.play(); }
+                if(sfxCheck) { sfxCheck.currentTime=0; sfxCheck.play().catch(e => {}); }
             } else {
                 spawnPoint.set(p.mesh.position.x, p.mesh.position.y + 0.5 + 2, p.mesh.position.z);
             }
         }
+
 
         function animate() {
             requestAnimationFrame(animate);
@@ -692,10 +751,12 @@
             const timeScale = Math.min(dt * 60, 4);
             const time = Date.now() / 1000;
 
+
             if (!isLocked) {
                 renderer.render(scene, camera);
                 return;
             }
+
 
             if (!isClimbing) {
                 playerMesh.rotation.y = euler.y + Math.PI;
@@ -703,21 +764,25 @@
                 playerMesh.rotation.y = Math.atan2(climbNormal.x, climbNormal.z) + Math.PI;
             }
 
+
             if (!isGrounded && !isClimbing) {
                 airTime += dt;
             } else {
                 airTime = 0;
             }
 
+
             if (!isGrounded && !isClimbing) {
                 playerVelocity.y -= GRAVITY * timeScale;
             }
 
+
             if (isGrounded && isSpacePressed) {
                 playerVelocity.y = JUMP_FORCE;
                 isGrounded = false;
-                if(sfxJump) { sfxJump.currentTime=0; sfxJump.play(); }
+                if(sfxJump) { sfxJump.currentTime=0; sfxJump.play().catch(e => {}); }
             }
+
 
             let currentSpeed = 0;
             if (!isClimbing) {
@@ -730,8 +795,10 @@
             const rightX = Math.cos(yaw);
             const rightZ = -Math.sin(yaw);
 
+
             let moveX = 0;
             let moveZ = 0;
+
 
             if (!isClimbing) {
                 if (moveForward) { moveX += fwdX; moveZ += fwdZ; }
@@ -739,6 +806,7 @@
                 if (moveLeft) { moveX -= rightX; moveZ -= rightZ; }
                 if (moveRight) { moveX += rightX; moveZ += rightZ; }
             }
+
 
             if (moveX !== 0 || moveZ !== 0) {
                 const len = Math.sqrt(moveX*moveX + moveZ*moveZ);
@@ -749,7 +817,7 @@
                 playerMesh.position.z += moveZ;
                 
                 if(isGrounded && sfxWalk) {
-                    if(sfxWalk.paused) sfxWalk.play();
+                    if(sfxWalk.paused) sfxWalk.play().catch(e => {});
                 }
             } else {
                 if(sfxWalk && !sfxWalk.paused) sfxWalk.pause();
@@ -757,13 +825,17 @@
             
             if(!isGrounded && sfxWalk) sfxWalk.pause();
 
+
             playerMesh.position.add(momentum);
             momentum.multiplyScalar(0.94); 
 
+
             if (!isClimbing) playerMesh.position.y += playerVelocity.y * timeScale;
+
 
             checkPhysics(dt);
             updateAnimation(time);
+
 
             camera.quaternion.setFromEuler(euler);
             
@@ -784,14 +856,17 @@
             camOffset.applyEuler(euler);
             camera.position.copy(playerMesh.position).add(camOffset);
 
+
             renderer.render(scene, camera);
         }
+
 
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
+
 
     </script>
 </body>
