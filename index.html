@@ -2,871 +2,326 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Infinite Random Obby</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maxbarkerbumsex - Google Docs</title>
+    <link rel="icon" href="https://ssl.gstatic.com/docs/doclist/images/infinite_arrow_favicon_5.ico">
+    <!-- Google Fonts for that authentic look -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Google+Sans:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; }
-        #info {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            background: rgba(0, 0, 0, 0.5);
-            padding: 10px;
-            border-radius: 8px;
-            pointer-events: none;
-            font-weight: bold;
-            text-shadow: 1px 1px 0 #000;
-            z-index: 998; 
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #f9fbfd;
+            font-family: 'Roboto', sans-serif;
+            color: #202124;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; /* Hide scrollbars on body */
         }
-        #checkpoint-msg {
-            position: absolute;
-            top: 20%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #FFFF00;
-            font-size: 24px;
-            font-weight: bold;
-            text-shadow: 2px 2px 0 #000;
-            opacity: 0;
-            transition: opacity 0.5s;
-            pointer-events: none;
-            z-index: 998; 
+
+        /* --- Header (Toolbar & Menu) --- */
+        #header {
+            background-color: white;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid #dadce0;
+            flex-shrink: 0;
         }
-        
-        #blocker {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5);
+
+        #doc-icon {
+            width: 40px;
+            height: 40px;
+            margin-right: 16px;
+            cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
+        }
+        
+        #doc-icon img {
+            width: 36px;
+            height: 36px;
+        }
+
+        #doc-info {
+            display: flex;
             flex-direction: column;
-            color: white;
-            z-index: 1001; 
         }
-        #instructions {
-            font-size: 24px;
+
+        #doc-title {
+            font-family: 'Google Sans', sans-serif;
+            font-size: 18px;
+            color: #202124;
+            margin-bottom: 4px;
+            cursor: text;
+            line-height: 20px;
+        }
+
+        #menu-bar {
+            display: flex;
+            gap: 12px;
+            font-size: 14px;
+            color: #5f6368;
+            cursor: default;
+        }
+
+        .menu-item {
             cursor: pointer;
-            text-align: center;
-            padding: 20px;
-            background: rgba(0,0,0,0.7);
-            border-radius: 10px;
-            border: 2px solid white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            user-select: none;
         }
-        #crosshair {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 10px;
-            height: 10px;
-            background-color: rgba(255, 255, 255, 0.8);
-            border: 1px solid black;
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            pointer-events: none;
-            z-index: 1000; 
+        .menu-item:hover {
+            background-color: #f1f3f4;
+            color: #202124;
         }
+
+        /* --- Toolbar (Fake) --- */
+        #toolbar {
+            background-color: #edf2fa;
+            padding: 6px 24px;
+            display: flex;
+            gap: 20px;
+            border-radius: 24px;
+            margin: 8px 16px;
+            width: fit-content;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        
+        .tool-separator {
+            width: 1px;
+            height: 20px;
+            background-color: #dadce0;
+        }
+
+        .tool-icon {
+            font-size: 18px;
+            color: #5f6368;
+            cursor: pointer;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+        }
+        .tool-icon:hover {
+            background-color: rgba(0,0,0,0.05);
+        }
+
+        /* --- Main Document Area --- */
+        #main-area {
+            flex-grow: 1;
+            background-color: #f9fbfd;
+            display: flex;
+            justify-content: center;
+            overflow-y: auto; /* Scroll ONLY the document area */
+            padding-top: 24px;
+            padding-bottom: 60px;
+        }
+
+        #document-page {
+            width: 816px; /* Standard A4 width approx */
+            min-height: 1056px; /* A4 height */
+            background-color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+            padding: 96px; /* Standard margins */
+            box-sizing: border-box;
+            position: relative;
+            outline: none;
+        }
+
+        /* --- Content Styling --- */
+        h1 {
+            font-family: 'Google Sans', sans-serif;
+            font-size: 26px; /* Title size */
+            margin-top: 0;
+            margin-bottom: 12px;
+            color: #000;
+            font-weight: 400;
+        }
+        
+        h2 {
+            font-family: 'Google Sans', sans-serif;
+            font-size: 20px;
+            margin-top: 24px;
+            margin-bottom: 10px;
+            color: #000;
+            font-weight: 400;
+        }
+
+        p {
+            font-size: 15px; /* approx 11pt */
+            line-height: 1.6;
+            margin-bottom: 16px;
+            margin-top: 0;
+        }
+
+        .game-link {
+            color: #1155cc;
+            text-decoration: underline;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .game-link:hover {
+            color: #2a7ade;
+        }
+
+        ul {
+            padding-left: 20px;
+            margin-top: 0;
+        }
+        li {
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+
+        /* Cursor blinking animation */
+        .cursor {
+            display: inline-block;
+            width: 1px;
+            height: 18px;
+            background-color: black;
+            animation: blink 1s step-end infinite;
+            vertical-align: text-bottom;
+            margin-left: 1px;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+        
+        /* Account Circle */
+        .account-circle {
+            width: 32px; 
+            height: 32px; 
+            background-color: #a142f4; /* Purple for user */
+            border-radius: 50%; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 16px; 
+            color: white;
+            cursor: pointer;
+        }
+        
+        /* Share Button */
+        .share-btn {
+            height: 36px; 
+            padding: 0 24px;
+            background-color: #c2e7ff; 
+            border-radius: 18px; 
+            margin-left: 16px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-family: 'Google Sans'; 
+            font-size: 14px; 
+            font-weight: 500; 
+            color: #001d35; 
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .share-btn:hover {
+            background-color: #b3d7ef;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+
     </style>
 </head>
 <body>
 
+    <!-- Header Section -->
+    <div id="header">
+        <div id="doc-icon">
+            <!-- Official-ish Docs Icon -->
+            <img src="https://upload.wikimedia.org/wikipedia/commons/0/01/Google_Docs_logo_%282014-2020%29.svg" alt="Docs Icon">
+        </div>
+        <div id="doc-info">
+            <div id="doc-title">Maxbarkerbumsex</div>
+            <div id="menu-bar">
+                <div class="menu-item">File</div>
+                <div class="menu-item">Edit</div>
+                <div class="menu-item">View</div>
+                <div class="menu-item">Insert</div>
+                <div class="menu-item">Format</div>
+                <div class="menu-item">Tools</div>
+                <div class="menu-item">Extensions</div>
+                <div class="menu-item">Help</div>
+            </div>
+        </div>
+        <div style="flex-grow: 1;"></div>
+        
+        <!-- Chat icon placeholder -->
+        <div class="tool-icon" style="margin-right: 16px;" title="Open comment history">💬</div>
+        
+        <div class="account-circle">M</div>
+        <div class="share-btn">Share</div>
+    </div>
+    
+    <!-- Fake Toolbar -->
+    <div id="toolbar">
+        <div class="tool-icon">↩</div>
+        <div class="tool-icon">↪</div>
+        <div class="tool-icon">🖨️</div>
+        <div class="tool-icon">✓</div>
+        <div class="tool-separator"></div>
+        <div class="tool-icon" style="width: auto; padding: 0 4px; font-size: 14px;">100% ▼</div>
+        <div class="tool-separator"></div>
+        <div class="tool-icon" style="width: auto; padding: 0 4px; font-size: 14px;">Normal text ▼</div>
+        <div class="tool-separator"></div>
+        <div class="tool-icon" style="width: auto; padding: 0 4px; font-family: 'Roboto'; font-size: 14px;">Roboto ▼</div>
+        <div class="tool-separator"></div>
+        <div class="tool-icon"><b>B</b></div>
+        <div class="tool-icon"><i>I</i></div>
+        <div class="tool-icon"><u>U</u></div>
+        <div class="tool-icon" style="color: black;">A</div>
+        <div class="tool-separator"></div>
+        <div class="tool-icon">🔗</div>
+    </div>
 
-    <div id="info">Stage: <span id="stage-display">1</span></div>
-    <div id="checkpoint-msg">CHECKPOINT! NEXT LEVEL GENERATED</div>
-    <div id="crosshair"></div>
+    <!-- Main Workspace -->
+    <div id="main-area">
+        <div id="document-page" contenteditable="false">
+            <h1>Project: Maxbarkerbumsex</h1>
+            
+            <p style="color: #666;">Last edit was seconds ago</p>
+            
+            <hr style="border: 0; border-top: 1px solid #ccc; margin: 20px 0;">
+            
+            <h2>Game Directory</h2>
+            
+            <p>This document contains the official listing of interactive projects hosted on this domain. Select a link below to launch the respective application.</p>
+            
+            <p><strong>Available Projects:</strong></p>
+            
+            <ul>
+                <li style="margin-bottom: 20px;">
+                    <a href="platformer.html" class="game-link" style="font-size: 18px;">Infinite Random Obby</a><br>
+                    <span style="color: #333; font-size: 14px;">
+                        A procedurally generated 3D platformer featuring infinite levels.
+                    </span><br>
+                    <span style="color: #5f6368; font-size: 13px; font-style: italic;">
+                        Status: Active | Controls: WASD + Space
+                    </span>
+                </li>
+                
+                <li>
+                    <span style="color: #999;">[ Placeholder for Game 2 ]</span><br>
+                    <span style="color: #ccc; font-size: 13px;">Coming soon...</span>
+                </li>
+            </ul>
 
-    <div id="blocker">
-        <div id="instructions">
-            <span style="font-size:30px">CLICK TO PLAY</span><br/><br/>
-            WASD to Move<br/>
-            SPACE to Jump<br/>
-            SHIFT (Hold) to Hang on Ledges<br/>
-            SPACE (While Hanging) to Wall Jump<br/>
-            (Look L/R to aim Wall Jump)<br/>
-            Scroll to Zoom<br/>
+            <br><br>
+            <p><em>Note: Ensure audio is enabled for the best experience. If games fail to load, please check your browser security settings regarding WebGL and pointer lock.</em></p>
+            
+            <p>End of document.<span class="cursor"></span></p>
         </div>
     </div>
 
-
-    <!-- SOUND EFFECTS -->
-    <audio id="sfx-jump" src="jump.mp3"></audio>
-    <audio id="sfx-check" src="checkpoint.wav"></audio>
-    <audio id="sfx-death" src="death.mp3"></audio>
-    <audio id="sfx-fire" src="firedeath.mp3"></audio>
-    <audio id="sfx-walk" src="walk.mp3" loop></audio>
-
-
-    <!-- Three.js from CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-
-    <script>
-        // --- Game Constants ---
-        const PLAYER_HEIGHT = 1.6; 
-        const PLAYER_SPEED_RUN = 0.22; 
-        const PLAYER_SPEED_WALK = 0.08;
-        const JUMP_FORCE = 0.55;   
-        const GRAVITY = 0.035;     
-        const CLIMB_SPEED = 0.15;
-        const PI_2 = Math.PI / 2;
-        
-        // --- Global Variables ---
-        let camera, scene, renderer;
-        let playerMesh; // Player Group (root of the character)
-        let platforms = [];
-        let clock; 
-        let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
-        
-        // Physics State
-        let playerVelocity = new THREE.Vector3();
-        let momentum = new THREE.Vector3(); 
-        let isGrounded = false;
-        
-        // Climbing State
-        let isClimbing = false;
-        let climbPhase = 0; 
-        let climbTimer = 0; 
-        let climbStartPos = new THREE.Vector3(); 
-        let climbTargetPos = new THREE.Vector3(); 
-        let climbNormal = new THREE.Vector3(); 
-        let airTime = 0; 
-        
-        // Game State
-        let spawnPoint = new THREE.Vector3(0, 5, 0);
-        let currentStage = 1;
-        let nextStageStart = new THREE.Vector3(0, 0, 0); 
-        let stageDirection = new THREE.Vector3(0, 0, -1); 
-        
-        // Input State
-        let moveForward = false;
-        let moveBackward = false;
-        let moveLeft = false;
-        let moveRight = false;
-        let isShiftPressed = false;
-        let isSpacePressed = false;
-        
-        // Camera State
-        let euler = new THREE.Euler(0, 0, 0, 'YXZ');
-        let cameraZoom = 6; 
-        const MIN_ZOOM = 0.1; 
-        const MAX_ZOOM = 15;
-        
-        // Pointer Lock
-        let isLocked = false;
-        const blocker = document.getElementById('blocker');
-        const instructions = document.getElementById('instructions');
-        const crosshair = document.getElementById('crosshair');
-
-        // Sound Elements
-        const sfxJump = document.getElementById('sfx-jump');
-        const sfxCheck = document.getElementById('sfx-check');
-        const sfxDeath = document.getElementById('sfx-death');
-        const sfxFire = document.getElementById('sfx-fire');
-        const sfxWalk = document.getElementById('sfx-walk');
-        
-        if(sfxWalk) sfxWalk.volume = 0.4; 
-
-
-        init();
-        
-        // --- Level Generation Functions ---
-        function createPlatform(x, y, z, w, h, d, color, type = 'normal') {
-            const geometry = new THREE.BoxGeometry(w, h, d);
-            const material = new THREE.MeshLambertMaterial({ color: color });
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(x, y, z);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            scene.add(mesh);
-
-
-            const platformData = {
-                mesh: mesh,
-                box: new THREE.Box3().setFromObject(mesh), 
-                width: w,
-                height: h,
-                depth: d,
-                type: type,
-                stage: currentStage
-            };
-            platforms.push(platformData);
-            return mesh;
-        }
-
-
-        function generateRandomStage() {
-            const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
-            const stageColor = colors[Math.floor(Math.random() * colors.length)];
-            
-            let curX = nextStageStart.x;
-            let curY = nextStageStart.y;
-            let curZ = nextStageStart.z;
-
-
-            const obstaclesCount = 5 + Math.floor(Math.random() * 4); 
-
-
-            for (let i = 0; i < obstaclesCount; i++) {
-                const r = Math.random();
-                const gap = 2.5 + Math.random() * 3.0;
-                
-                const driftX = (Math.random() - 0.5) * 8; 
-                const driftY = (Math.random() - 0.4) * 2; 
-
-
-                curZ -= gap;
-                curX += driftX;
-                curY += driftY;
-                
-                if(curX > 40) curX = 40;
-                if(curX < -40) curX = -40;
-
-
-                if (r < 0.3) {
-                    const w = 3 + Math.random() * 3;
-                    const d = 3 + Math.random() * 3;
-                    curZ -= d/2;
-                    createPlatform(curX, curY, curZ, w, 1, d, stageColor);
-                    curZ -= d/2;
-                } 
-                else if (r < 0.5) {
-                    const len = 8 + Math.random() * 6;
-                    createPlatform(curX, curY, curZ - len/2, 4, 1, len, 0x333333);
-                    const lavaCount = Math.floor(len / 4); 
-                    for(let k=0; k<lavaCount; k++) {
-                        const lZ = curZ - (k * 4) - 2;
-                        createPlatform(curX, curY + 0.6, lZ, 3.5, 0.2, 1.0, 0xff0000, 'lava');
-                    }
-                    curZ -= len;
-                }
-                else if (r < 0.7) {
-                     const len = 6 + Math.random() * 6;
-                     curZ -= len/2;
-                     createPlatform(curX, curY, curZ, 1.2, 1, len, stageColor);
-                     curZ -= len/2;
-                }
-                else {
-                    const steps = 3 + Math.floor(Math.random()*3);
-                    for(let s=0; s<steps; s++) {
-                        curZ -= 2.5; 
-                        curX += (Math.random() - 0.5) * 5; 
-                        curY += (Math.random() - 0.3) * 1.5; 
-                        createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
-                    }
-                }
-            }
-
-
-            curZ -= 4;
-            createPlatform(curX, curY, curZ - 3, 8, 1, 6, 0x00FF00, 'checkpoint');
-            
-            const geo = new THREE.CylinderGeometry(0.5, 0.5, 5);
-            const mat = new THREE.MeshBasicMaterial({color: 0xffff00});
-            const pole = new THREE.Mesh(geo, mat);
-            pole.position.set(curX + 3, curY + 2.5, curZ - 3);
-            scene.add(pole);
-
-
-            nextStageStart.set(curX, curY, curZ - 6);
-        }
-
-        // Helper function to update camera position based on player position and Euler angle
-        function updateCameraPosition() {
-            if (!playerMesh || !camera) return;
-            
-            camera.quaternion.setFromEuler(euler);
-            
-            let zDist = cameraZoom;
-            let yDist = Math.max(0, cameraZoom * 0.4); 
-            let xOffset = 1.5;
-            
-            // This logic is duplicated from animate(), but ensures camera snaps once instantly
-            if (cameraZoom < 1.0) {
-                xOffset = 0;
-                yDist = 0; 
-                zDist = -0.2; 
-                playerMesh.visible = false; 
-            } else {
-                playerMesh.visible = true;
-            }
-            
-            const camOffset = new THREE.Vector3(xOffset, 2 + yDist, zDist);
-            camOffset.applyEuler(euler);
-            camera.position.copy(playerMesh.position).add(camOffset);
-        }
-
-        
-        // --- Core Initialization ---
-        function init() {
-            clock = new THREE.Clock();
-
-            // 1. Scene Setup
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x87CEEB); 
-            scene.fog = new THREE.Fog(0x87CEEB, 20, 150);
-
-            // 2. Camera (FOV 85)
-            camera = new THREE.PerspectiveCamera(85, window.innerWidth / window.innerHeight, 0.1, 1000);
-            
-            // 3. Renderer
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.shadowMap.enabled = true;
-            document.body.appendChild(renderer.domElement);
-
-            // 4. Lighting
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-            scene.add(ambientLight);
-            
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            dirLight.position.set(50, 100, 50);
-            dirLight.castShadow = true;
-            dirLight.shadow.camera.left = -50;
-            dirLight.shadow.camera.right = 50;
-            dirLight.shadow.camera.top = 50;
-            dirLight.shadow.camera.bottom = -50;
-            dirLight.shadow.mapSize.width = 2048;
-            dirLight.shadow.mapSize.height = 2048;
-            scene.add(dirLight);
-
-            // 5. Create Player (Original Blocky)
-            createPlayer();
-
-            // 6. Create Initial Level
-            createPlatform(0, 0, 0, 10, 1, 10, 0xaaaaaa, 'spawn'); 
-            nextStageStart.set(0, 0, -5); 
-            generateRandomStage();
-
-            // 7. Event Listeners
-            document.addEventListener('keydown', onKeyDown);
-            document.addEventListener('keyup', onKeyUp);
-            document.addEventListener('wheel', onScroll); 
-            window.addEventListener('resize', onWindowResize);
-            
-            instructions.addEventListener('click', function() {
-                if(sfxJump) { 
-                    sfxJump.play().then(() => {
-                        sfxJump.pause();
-                        sfxJump.currentTime = 0;
-                    }).catch(e => { /* Audio playback error handling */ });
-                }
-                
-                document.body.requestPointerLock();
-            });
-            document.addEventListener('pointerlockchange', pointerLockChange);
-            document.addEventListener('mousemove', onMouseMove);
-
-            // --- Camera Snap Fix ---
-            updateCameraPosition();
-
-            animate();
-        }
-
-
-        // --- Player Creation (Original Blocky) ---
-        function createPlayer() {
-            const group = new THREE.Group();
-            
-            // Materials (Classic Noob)
-            const matHead = new THREE.MeshLambertMaterial({ color: 0xFFFF00 }); // Yellow
-            const matTorso = new THREE.MeshLambertMaterial({ color: 0x0000FF }); // Blue
-            const matPants = new THREE.MeshLambertMaterial({ color: 0x00FF00 }); // Green
-            const matSkin = matHead; // Re-use
-
-
-            // 1. Torso (Simple Box)
-            const torso = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.5), matTorso);
-            torso.position.y = 1;
-            group.add(torso);
-
-
-            // 2. Head (Simple Box)
-            const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matHead);
-            head.position.y = 1.8;
-            group.add(head);
-
-
-            // 3. Left Leg
-            const legGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
-            legGeo.translate(0, -0.5, 0); // Pivot at Hip
-            const legL = new THREE.Mesh(legGeo, matPants);
-            legL.position.set(-0.25, 0.5, 0); 
-            group.add(legL);
-
-
-            // 4. Right Leg
-            const legR = new THREE.Mesh(legGeo, matPants);
-            legR.position.set(0.25, 0.5, 0); 
-            group.add(legR);
-
-
-            // 5. Left Arm
-            const armGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
-            armGeo.translate(0, -0.5, 0); // Pivot at Shoulder
-            const armL = new THREE.Mesh(armGeo, matSkin);
-            // Positioned to prevent clipping/detachment (from previous fix)
-            armL.position.set(-0.7, 1.5, 0); 
-            armL.rotation.z = 0; 
-            group.add(armL);
-
-
-            // 6. Right Arm
-            const armR = new THREE.Mesh(armGeo, matSkin);
-            armR.position.set(0.7, 1.5, 0); 
-            armR.rotation.z = 0; 
-            group.add(armR);
-
-
-            group.position.copy(spawnPoint);
-            group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
-
-
-            scene.add(group);
-            playerMesh = group;
-            
-            playerMesh.userData = { legL, legR, armL, armR };
-            isPlayerLoaded = true;
-        }
-
-
-        // --- Game Logic and Animation ---
-
-        function updateAnimation(time) {
-            if (!playerMesh || !playerMesh.userData) return;
-            const limbs = playerMesh.userData;
-
-            // Reset rotations (A clean starting state for all limbs)
-            limbs.legL.rotation.set(0,0,0);
-            limbs.legR.rotation.set(0,0,0);
-            limbs.armL.rotation.set(0,0,0);
-            limbs.armR.rotation.set(0,0,0);
-
-            if (isClimbing) {
-                 limbs.armL.rotation.x = -Math.PI; 
-                 limbs.armR.rotation.x = -Math.PI; 
-                 
-                 if (climbPhase === 1 && climbTimer > 0.1) {
-                     limbs.armL.rotation.x = -Math.PI / 2;
-                     limbs.armR.rotation.x = -Math.PI / 2;
-                 }
-                 limbs.legL.rotation.x = -0.2; 
-                 limbs.legR.rotation.x = -0.3;
-                 
-            } else if (!isGrounded && airTime > 0.15) {
-                // JUMP ANIMATION: Arms and legs spread wide when airborne
-                
-                // Legs
-                limbs.legL.rotation.z = -0.4;  // OUTWARDS LEFT
-                limbs.legR.rotation.z = 0.4; // OUTWARDS RIGHT
-
-
-                // Arms 
-                limbs.armL.rotation.z = -0.8; // OUTWARDS LEFT 
-                limbs.armR.rotation.z = 0.8;  // OUTWARDS RIGHT
-                
-            } else if (moveForward || moveBackward || moveLeft || moveRight) {
-                // WALKING / RUNNING ANIMATION: Arm/Leg X-axis swing
-                const speed = isShiftPressed ? 5 : 10;
-                const angle = Math.sin(time * speed) * 0.8;
-                limbs.legL.rotation.x = -angle;
-                limbs.legR.rotation.x = angle;
-                limbs.armL.rotation.x = angle;
-                limbs.armR.rotation.x = -angle;
-            } else {
-                // STANDING / IDLE: Arms straight down, no animation.
-            }
-        }
-
-
-        // --- Input Handling ---
-        function onKeyDown(event) {
-            switch (event.code) {
-                case 'ArrowUp': case 'KeyW': moveForward = true; break;
-                case 'ArrowLeft': case 'KeyA': moveLeft = true; break;
-                case 'ArrowDown': case 'KeyS': moveBackward = true; break;
-                case 'ArrowRight': case 'KeyD': moveRight = true; break;
-                case 'ShiftLeft': case 'ShiftRight': isShiftPressed = true; break;
-                case 'Space': 
-                    isSpacePressed = true;
-                    break;
-                case 'KeyR': respawn('fall'); break; 
-            }
-        }
-
-
-        function onKeyUp(event) {
-            switch (event.code) {
-                case 'ArrowUp': case 'KeyW': moveForward = false; break;
-                case 'ArrowLeft': case 'KeyA': moveLeft = false; break;
-                case 'ArrowDown': case 'KeyS': moveBackward = false; break;
-                case 'ArrowRight': case 'KeyD': moveRight = false; break;
-                case 'ShiftLeft': case 'ShiftRight': isShiftPressed = false; break;
-                case 'Space': isSpacePressed = false; break;
-            }
-        }
-
-
-        function onScroll(event) {
-            cameraZoom += event.deltaY * 0.01;
-            cameraZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, cameraZoom));
-        }
-
-
-        function pointerLockChange() {
-            if (document.pointerLockElement === document.body) {
-                isLocked = true;
-                blocker.style.display = 'none';
-                crosshair.style.display = 'block';
-            } else {
-                isLocked = false;
-                blocker.style.display = 'flex';
-                crosshair.style.display = 'none';
-                moveForward = false; moveBackward = false; moveLeft = false; moveRight = false; isSpacePressed = false;
-            }
-        }
-
-
-        function onMouseMove(event) {
-            if (!isLocked) return;
-            const movementX = event.movementX || 0;
-            const movementY = event.movementY || 0;
-            euler.y -= movementX * 0.002;
-            euler.x -= movementY * 0.002;
-            const limit = Math.PI / 2 - 0.1;
-            euler.x = Math.max(-limit, Math.min(limit, euler.x));
-        }
-
-
-        // --- Physics Loop ---
-        function respawn(type) {
-            playerMesh.position.copy(spawnPoint);
-            playerVelocity.set(0, 0, 0);
-            momentum.set(0, 0, 0);
-            if (playerMesh.position.y < -30) playerVelocity.set(0,0,0);
-            
-            // SFX
-            if (type === 'fire') {
-                if(sfxFire) { sfxFire.currentTime = 0; sfxFire.play().catch(e => {}); }
-            } else {
-                if(sfxDeath) { sfxDeath.currentTime = 0; sfxDeath.play().catch(e => {}); }
-            }
-        }
-
-
-        function startClimb(p, halfW, halfD, radius, topY) {
-            isClimbing = true;
-            climbPhase = 0; // Start in Hang phase
-            climbTimer = 0;
-            playerVelocity.set(0, 0, 0);
-            momentum.set(0, 0, 0);
-
-
-            const pPos = p.mesh.position;
-            const px = playerMesh.position.x;
-            const pz = playerMesh.position.z;
-            
-            // Distances to faces
-            const dx1 = (px - (pPos.x - halfW)); // Left face
-            const dx2 = (px - (pPos.x + halfW)); // Right face
-            const dz1 = (pz - (pPos.z - halfD)); // Back face
-            const dz2 = (pz - (pPos.z + halfD)); // Front face
-            
-            const adx1 = Math.abs(dx1);
-            const adx2 = Math.abs(dx2);
-            const adz1 = Math.abs(dz1);
-            const adz2 = Math.abs(dz2);
-            
-            const min = Math.min(adx1, adx2, adz1, adz2);
-            
-            // Hang Position: Shoulders at topY level.
-            const hangY = topY - 1.2; 
-            const endY = topY + 0.5;
-
-
-            // Set Start Pos (Snapped to wall)
-            climbStartPos.set(px, hangY, pz);
-            climbTargetPos.set(px, endY, pz);
-
-
-            const pushIn = 0.5; 
-            
-            if (min === adx1) {
-                climbStartPos.x = pPos.x - halfW - radius;
-                climbTargetPos.x = pPos.x - halfW + pushIn;
-                climbNormal.set(-1, 0, 0); // Wall Normal is Left
-            } else if (min === adx2) {
-                climbStartPos.x = pPos.x + halfW + radius;
-                climbTargetPos.x = pPos.x + halfW - pushIn;
-                climbNormal.set(1, 0, 0);
-            } else if (min === adz1) {
-                climbStartPos.z = pPos.z - halfD - radius;
-                climbTargetPos.z = pPos.z - halfD + pushIn;
-                climbNormal.set(0, 0, -1);
-            } else if (min === adz2) {
-                climbStartPos.z = pPos.z + halfD + radius;
-                climbTargetPos.z = pPos.z + halfD - pushIn;
-                climbNormal.set(0, 0, 1);
-            }
-            
-            playerMesh.position.copy(climbStartPos);
-        }
-
-        function checkPhysics(dt) {
-            // Climbing Physics
-            if (isClimbing) {
-                if (climbPhase === 0) {
-                    playerMesh.position.copy(climbStartPos); 
-                    
-                    if (isSpacePressed) {
-                        isClimbing = false;
-                        isGrounded = false;
-                        airTime = 0.2; 
-                        playerVelocity.y = JUMP_FORCE * 1.1; 
-                        
-                        const normalAngle = Math.atan2(climbNormal.x, climbNormal.z);
-                        const camAngle = Math.atan2(-Math.sin(euler.y), -Math.cos(euler.y));
-                        
-                        let diff = camAngle - normalAngle;
-                        while (diff > Math.PI) diff -= Math.PI * 2;
-                        while (diff < -Math.PI) diff += Math.PI * 2;
-                        
-                        const limit = Math.PI / 6;
-                        diff = Math.max(-limit, Math.min(limit, diff));
-                        
-                        const finalAngle = normalAngle + diff;
-                        
-                        momentum.set(Math.sin(finalAngle), 0, Math.cos(finalAngle)).multiplyScalar(0.5); 
-                        
-                        if(sfxJump) { sfxJump.currentTime=0; sfxJump.play().catch(e => {}); }
-
-                        return;
-                    }
-                    
-                    if (!isShiftPressed) {
-                        climbPhase = 1; 
-                        climbTimer = 0;
-                    }
-                } 
-                else {
-                    climbTimer += dt;
-                    if (climbTimer < 0.4) { 
-                        const t = climbTimer / 0.4;
-                        playerMesh.position.lerpVectors(climbStartPos, climbTargetPos, t);
-                    } else {
-                        playerMesh.position.copy(climbTargetPos);
-                        isClimbing = false;
-                        isGrounded = true;
-                    }
-                }
-                return;
-            }
-
-            const playerRadius = 0.4;
-            let onGround = false;
-            let hitLedge = false;
-            let ledgePlatform = null; 
-
-            const nextX = playerMesh.position.x; 
-            const nextZ = playerMesh.position.z;
-            const feetY = playerMesh.position.y - 0.5;
-            const headY = playerMesh.position.y + 1.0;
-
-            for (let p of platforms) {
-                if (Math.abs(p.mesh.position.z - nextZ) > 10 && Math.abs(p.mesh.position.x - nextX) > 10) continue;
-
-                const pPos = p.mesh.position;
-                const halfW = p.width / 2;
-                const halfD = p.depth / 2;
-                const halfH = p.height / 2;
-
-                const minX = pPos.x - halfW - playerRadius;
-                const maxX = pPos.x + halfW + playerRadius;
-                const minZ = pPos.z - halfD - playerRadius;
-                const maxZ = pPos.z + halfD + playerRadius;
-                const minY = pPos.y - halfH;
-                const maxY = pPos.y + halfH;
-
-                if (nextX > minX && nextX < maxX && nextZ > minZ && nextZ < maxZ) {
-                    if (feetY < maxY && headY > minY) {
-                        const depthIntoTop = (maxY) - feetY;
-                        
-                        if (depthIntoTop > 0 && depthIntoTop < 0.6 && playerVelocity.y <= 0.1) {
-                            onGround = true;
-                            playerMesh.position.y = maxY + 0.5;
-                            playerVelocity.y = 0;
-                            momentum.set(0,0,0); 
-                            
-                            if(p.type === 'lava') { respawn('fire'); return; }
-                            if(p.type === 'checkpoint') triggerCheckpoint(p);
-                        } 
-                        else if (feetY < maxY - 0.1) {
-                            if (feetY > maxY - 1.5 && feetY < maxY - 0.5 && p.type !== 'lava' && playerVelocity.y < 0) {
-                                hitLedge = true;
-                                ledgePlatform = p;
-                            } else {
-                                const dx1 = nextX - minX;
-                                const dx2 = maxX - nextX;
-                                const dz1 = nextZ - minZ;
-                                const dz2 = maxZ - nextZ;
-                                const minOverlap = Math.min(dx1, dx2, dz1, dz2);
-                                
-                                if (minOverlap === dx1) { playerMesh.position.x = minX; momentum.x = 0; }
-                                else if (minOverlap === dx2) { playerMesh.position.x = maxX; momentum.x = 0; }
-                                else if (minOverlap === dz1) { playerMesh.position.z = minZ; momentum.z = 0; }
-                                else if (minOverlap === dz2) { playerMesh.position.z = maxZ; momentum.z = 0; }
-                            }
-                        }
-                    }
-                }
-                else if (isShiftPressed && p.type !== 'lava') {
-                    const grabDist = 0.5;
-                    if (nextX > minX - grabDist && nextX < maxX + grabDist && 
-                        nextZ > minZ - grabDist && nextZ < maxZ + grabDist) {
-                        if (feetY > maxY - 1.2 && feetY < maxY - 0.2) {
-                            hitLedge = true;
-                            ledgePlatform = p;
-                        }
-                    }
-                }
-            }
-
-            isGrounded = onGround;
-
-            if (!isGrounded && hitLedge && ledgePlatform && airTime > 0.1) {
-                const topY = ledgePlatform.mesh.position.y + ledgePlatform.height/2;
-                startClimb(ledgePlatform, ledgePlatform.width/2, ledgePlatform.depth/2, playerRadius, topY);
-            }
-
-            if (playerMesh.position.y < -30) respawn('fall');
-        }
-
-        function triggerCheckpoint(p) {
-            if(!p.triggered) {
-                p.triggered = true;
-                spawnPoint.set(p.mesh.position.x, p.mesh.position.y + 0.5 + 2, p.mesh.position.z);
-                generateRandomStage();
-                currentStage++;
-                document.getElementById('stage-display').innerText = currentStage;
-                const msg = document.getElementById('checkpoint-msg');
-                msg.style.opacity = 1;
-                setTimeout(() => { msg.style.opacity = 0; }, 2000);
-                
-                if(sfxCheck) { sfxCheck.currentTime=0; sfxCheck.play().catch(e => {}); }
-            } else {
-                spawnPoint.set(p.mesh.position.x, p.mesh.position.y + 0.5 + 2, p.mesh.position.z);
-            }
-        }
-
-        // The animate loop starts only after init() resolves
-        function animate() {
-            requestAnimationFrame(animate);
-            
-            const dt = clock.getDelta();
-            const timeScale = Math.min(dt * 60, 4);
-            const time = Date.now() / 1000;
-
-            // Check if player is loaded
-            if (!isLocked && isPlayerLoaded) {
-                 // Still need to render even if not locked, to show the blocker/instructions
-                 renderer.render(scene, camera);
-            }
-
-            if (!isLocked || !isPlayerLoaded) {
-                 return;
-            }
-
-            if (!isClimbing) {
-                playerMesh.rotation.y = euler.y + Math.PI;
-            } else if (isClimbing && climbPhase === 0) {
-                playerMesh.rotation.y = Math.atan2(climbNormal.x, climbNormal.z) + Math.PI;
-            }
-
-
-            if (!isGrounded && !isClimbing) {
-                airTime += dt;
-            } else {
-                airTime = 0;
-            }
-
-
-            if (!isGrounded && !isClimbing) {
-                playerVelocity.y -= GRAVITY * timeScale;
-            }
-
-
-            if (isGrounded && isSpacePressed) {
-                playerVelocity.y = JUMP_FORCE;
-                isGrounded = false;
-                if(sfxJump) { sfxJump.currentTime=0; sfxJump.play().catch(e => {}); }
-            }
-
-
-            let currentSpeed = 0;
-            if (!isClimbing) {
-                currentSpeed = isShiftPressed ? PLAYER_SPEED_WALK : PLAYER_SPEED_RUN;
-            }
-            
-            const yaw = euler.y;
-            const fwdX = -Math.sin(yaw);
-            const fwdZ = -Math.cos(yaw);
-            const rightX = Math.cos(yaw);
-            const rightZ = -Math.sin(yaw);
-
-
-            let moveX = 0;
-            let moveZ = 0;
-
-
-            if (!isClimbing) {
-                if (moveForward) { moveX += fwdX; moveZ += fwdZ; }
-                if (moveBackward) { moveX -= fwdX; moveZ -= fwdZ; }
-                if (moveLeft) { moveX -= rightX; moveZ -= rightZ; }
-                if (moveRight) { moveX += rightX; moveZ += rightZ; }
-            }
-
-
-            if (moveX !== 0 || moveZ !== 0) {
-                const len = Math.sqrt(moveX*moveX + moveZ*moveZ);
-                moveX = (moveX / len) * currentSpeed * timeScale;
-                moveZ = (moveZ / len) * currentSpeed * timeScale;
-                
-                playerMesh.position.x += moveX;
-                playerMesh.position.z += moveZ;
-                
-                if(isGrounded && sfxWalk) {
-                    if(sfxWalk.paused) sfxWalk.play().catch(e => {});
-                }
-            } else {
-                if(sfxWalk && !sfxWalk.paused) sfxWalk.pause();
-            }
-            
-            if(!isGrounded && sfxWalk) sfxWalk.pause();
-
-
-            playerMesh.position.add(momentum);
-            momentum.multiplyScalar(0.94); 
-
-
-            if (!isClimbing) playerMesh.position.y += playerVelocity.y * timeScale;
-
-
-            checkPhysics(dt);
-            updateAnimation(time);
-
-
-            // Ensure camera update runs every frame during the active game loop
-            updateCameraPosition();
-            renderer.render(scene, camera);
-        }
-
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-
-    </script>
 </body>
 </html>
