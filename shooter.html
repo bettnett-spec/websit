@@ -484,6 +484,14 @@
             document.getElementById('start-game-btn').addEventListener('click', () => {
                 const name = document.getElementById('player-name-input').value.trim();
                 if (!name) return alert("Please enter a name to play.");
+                
+                const lowerName = name.toLowerCase();
+                const blockedWords = ['fuck','shit','bitch','cunt','nigga','nigger','fag','dick','cock','pussy','slut','whore','hitler','nazi','asshole'];
+                if (blockedWords.some(w => lowerName.includes(w))) {
+                    alert("Name blocked. Please select a different name.");
+                    return;
+                }
+                
                 playerName = name;
                 document.getElementById('start-screen').style.display = 'none';
                 gameStarted = true;
@@ -1141,7 +1149,7 @@
                     // Look at player
                     e.mesh.lookAt(camera.position.x, e.mesh.position.y, camera.position.z);
                     
-                    if (dist < 40) {
+                    if (now - e.spawnTime > 1000 && dist < 40) {
                         if (now - e.lastShot > 1000) {
                             enemyShoot(e);
                             e.lastShot = now;
