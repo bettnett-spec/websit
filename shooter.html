@@ -535,51 +535,56 @@
         const raycaster = new THREE.Raycaster();
         const down = new THREE.Vector3(0, -1, 0);
         
-        // 1. Try to find GREEN grass (Color-based smart spawning)
         for(let i=0; i<50; i++) {
-            const x = (Math.random() - 0.5) * 100; // Wider search area
-            const z = (Math.random() - 0.5) * 100;
+            const x = (Math.random() - 0.5) * 200; // Expanded search area
+            const z = (Math.random() - 0.5) * 200;
             
             raycaster.set(new THREE.Vector3(x, 100, z), down);
             const intersects = raycaster.intersectObjects(mapMeshes, true);
             
             if (intersects.length > 0) {
                 const hit = intersects[0];
-                if (hit.face && hit.face.normal.y > 0.8) {
-                    // Check if material color is predominantly green
-                    let isGreen = false;
-                    if (hit.object.material) {
-                        let mat = hit.object.material;
-                        if (Array.isArray(mat)) mat = mat[hit.face.materialIndex];
-                        if (mat && mat.color) {
-                            const c = mat.color;
-                            if (c.g > c.r + 0.05 && c.g > c.b + 0.05) isGreen = true;
+                // Must be a floor (normal pointing up)
+                if (hit.face && hit.face.normal.y > 0.5) {
+                    let finalX = hit.point.x;
+                    let finalZ = hit.point.z;
+                    
+                    // Check horizontal clearance to avoid spawning inside walls
+                    const wallRaycaster = new THREE.Raycaster();
+                    const directions = [
+                        new THREE.Vector3(1,0,0), new THREE.Vector3(-1,0,0),
+                        new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,-1)
+                    ];
+                    
+                    let pushDir = new THREE.Vector3(0,0,0);
+                    let wallHitCount = 0;
+                    
+                    for (let dir of directions) {
+                        wallRaycaster.set(new THREE.Vector3(hit.point.x, hit.point.y + 0.5, hit.point.z), dir);
+                        const wallHits = wallRaycaster.intersectObjects(mapMeshes, true);
+                        if (wallHits.length > 0 && wallHits[0].distance < 1.5) {
+                            pushDir.add(dir.clone().multiplyScalar(-1));
+                            wallHitCount++;
                         }
                     }
                     
-                    if (isGreen) {
-                        return new CANNON.Vec3(hit.point.x, hit.point.y + 1.5, hit.point.z);
+                    if (wallHitCount > 0) {
+                        if (pushDir.lengthSq() > 0) {
+                            pushDir.normalize().multiplyScalar(2.0); // Push away 2 units
+                            finalX += pushDir.x;
+                            finalZ += pushDir.z;
+                        } else {
+                            continue; // Trapped on multiple sides, try another spot
+                        }
                     }
-                }
-            }
-        }
-
-        // 2. Fallback: Any flat surface pointing UP
-        for(let i=0; i<30; i++) {
-            const x = (Math.random() - 0.5) * 80;
-            const z = (Math.random() - 0.5) * 80;
-            raycaster.set(new THREE.Vector3(x, 100, z), down);
-            const intersects = raycaster.intersectObjects(mapMeshes, true);
-            if (intersects.length > 0) {
-                const hit = intersects[0];
-                if (hit.face && hit.face.normal.y > 0.8) {
-                    return new CANNON.Vec3(hit.point.x, hit.point.y + 1.5, hit.point.z);
+                    
+                    return new CANNON.Vec3(finalX, hit.point.y + 1.5, finalZ);
                 }
             }
         }
         
-        // 3. Absolute Fallback: Sky
-        return new CANNON.Vec3((Math.random() - 0.5) * 20, 10, (Math.random() - 0.5) * 20);
+        // Absolute Fallback
+        return new CANNON.Vec3((Math.random() - 0.5) * 50, 20, (Math.random() - 0.5) * 50);
     }
 
     function respawnEnemy(enemy, force = false) {
@@ -899,6 +904,12 @@
         camera.position.copy(physicsBody.position);
         camera.position.y += 0.6;
         
+        // Player out of bounds reset
+        if (physicsBody.position.y < -30) {
+            physicsBody.position.set(0, 10, 0);
+            physicsBody.velocity.set(0, 0, 0);
+        }
+        
         // Apply Camera Shake (Position Based)
         if (shakeIntensity > 0) {
             camera.position.x += (Math.random() - 0.5) * shakeIntensity;
@@ -922,6 +933,15 @@
         enemyBodies.forEach(e => {
             // Only update active enemies
             if (e.mesh.visible) {
+                 // Check if fell out of bounds
+                 if (e.body.position.y < -30) {
+                     e.mesh.visible = false;
+                     e.deadUntil = 0; // Respawn immediately
+                     e.body.position.set(0, -50, 0);
+                     e.body.velocity.set(0, 0, 0);
+                     return;
+                 }
+
                  e.debugMesh.position.copy(e.body.position);
                  e.debugMesh.quaternion.copy(e.body.quaternion);
 
