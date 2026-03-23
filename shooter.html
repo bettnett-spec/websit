@@ -8,12 +8,18 @@
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
         #loader {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: #1a1a1a; color: #f0f0f0; display: flex; flex-direction: column;
+            background: #111; color: #00ff00; display: flex; flex-direction: column;
             justify-content: center; align-items: center; z-index: 1000;
             transition: opacity 0.5s ease;
+            text-shadow: 0 0 10px #00ff00;
+        }
+        #vignette {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            box-shadow: inset 0 0 200px rgba(0,0,0,0.9);
+            pointer-events: none; z-index: 1;
         }
         #ui-layer {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2;
         }
         #crosshair {
             position: absolute; top: 50%; left: 50%;
@@ -24,51 +30,86 @@
         #crosshair::before, #crosshair::after {
             content: ''; position: absolute; background: rgba(0, 255, 0, 0.8);
         }
-        #crosshair::before { top: -10px; left: 1px; width: 2px; height: 24px; }
-        #crosshair::after { top: 1px; left: -10px; width: 24px; height: 2px; }
+        #crosshair::before { top: -12px; left: 1px; width: 2px; height: 28px; }
+        #crosshair::after { top: 1px; left: -12px; width: 28px; height: 2px; }
         
+        .hud-panel {
+            background: linear-gradient(135deg, rgba(0,0,0,0.8), rgba(20,20,20,0.6));
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+
         #controls-hint {
             position: absolute; top: 20px; left: 20px;
-            background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
-            border-left: 4px solid #00ff00;
-            padding: 15px; border-radius: 0 4px 4px 0; color: white;
+            border-left: 4px solid #00aaff;
+            padding: 15px 20px; border-radius: 0 8px 8px 0;
         }
         #health {
             position: absolute; bottom: 20px; left: 20px;
-            background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
             border-left: 4px solid #00ff00;
-            padding: 10px 20px; border-radius: 0 4px 4px 0;
-            color: #fff; font-weight: bold; font-size: 20px;
+            padding: 15px 25px; border-radius: 0 8px 8px 0;
+            font-weight: bold; font-size: 24px;
             text-shadow: 1px 1px 2px black;
+            min-width: 200px;
         }
         #kill-count {
             position: absolute; top: 20px; right: 20px;
-            background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
-            border-right: 4px solid #ff0000;
-            padding: 10px 20px; border-radius: 4px 0 0 4px;
-            font-size: 32px; color: #ff0000; font-weight: bold;
+            border-right: 4px solid #ff0055;
+            padding: 15px 25px; border-radius: 8px 0 0 8px;
+            font-size: 32px; color: #ff0055; font-weight: 900;
             text-shadow: 2px 2px 0 #000;
+            letter-spacing: 2px;
         }
+        
+        #radio-container {
+            position: absolute; bottom: 20px; right: 20px;
+            border-right: 4px solid #aa00ff;
+            padding: 15px 20px; border-radius: 8px 0 0 8px;
+            text-align: right; pointer-events: auto;
+        }
+        #radio-title {
+            font-size: 14px; font-weight: bold; margin-bottom: 10px;
+            color: #aa00ff; max-width: 250px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        #radio-controls button {
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+            color: white; font-size: 16px; cursor: pointer; margin-left: 8px;
+            border-radius: 4px; padding: 5px 12px; transition: all 0.2s;
+        }
+        #radio-controls button:hover {
+            background: rgba(170,0,255,0.5); border-color: #aa00ff;
+        }
+
         #damage-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: red; opacity: 0; pointer-events: none;
-            transition: opacity 0.1s ease-out;
-            mix-blend-mode: multiply;
+            background: radial-gradient(circle, transparent 30%, rgba(255,0,0,0.4) 100%);
+            opacity: 0; pointer-events: none; z-index: 3;
+            transition: opacity 0.15s ease-out;
         }
-        .key { color: #ffd700; font-weight: bold; }
-        .locked { color: #888; font-size: 0.8em; margin-left: 5px; }
-        .unlocked { color: #0f0; font-weight: bold; font-size: 0.8em; margin-left: 5px; }
-        .active-weapon { color: #ffaa00; text-shadow: 0 0 10px #ffaa00; font-weight: bold; transform: scale(1.05); display: inline-block; }
+        .key { color: #00aaff; font-weight: bold; background: rgba(0,170,255,0.2); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+        .locked { color: #666; font-size: 0.8em; margin-left: 8px; font-style: italic; }
+        .unlocked { color: #00ff00; font-weight: bold; font-size: 0.8em; margin-left: 8px; text-shadow: 0 0 5px #00ff00; }
+        .weapon-slot { margin: 8px 0; transition: all 0.2s; opacity: 0.7; }
+        .active-weapon { 
+            color: #ffaa00; text-shadow: 0 0 10px #ffaa00; 
+            font-weight: bold; transform: scale(1.05) translateX(10px); 
+            opacity: 1;
+        }
     </style>
 <link rel="stylesheet" href="/index.css">
 </head>
 <body>
 
 <div id="loader">
-    <h1>LOADING ASSETS...</h1>
-    <p>Please wait while the map and weapons load.</p>
+    <h1 style="font-size: 48px; margin-bottom: 10px; letter-spacing: 5px;">INITIALIZING</h1>
+    <p style="color: #888;">Loading geometry and audio assets...</p>
 </div>
 
+<div id="vignette"></div>
 <div id="damage-overlay"></div>
 
 <!-- Hidden root to satisfy index.tsx if it runs -->
@@ -76,22 +117,36 @@
 
 <div id="ui-layer">
     <div id="crosshair"></div>
-    <div id="health">
-        <div>HEALTH <span id="hp-val">100</span></div>
-        <div style="width: 200px; height: 10px; background: #333; margin-top: 5px;">
-            <div id="hp-bar" style="width: 100%; height: 100%; background: #00ff00; transition: width 0.2s;"></div>
+    <div id="health" class="hud-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="letter-spacing: 2px; font-size: 16px; color: #aaa;">ARMOR</span>
+            <span id="hp-val" style="font-size: 28px;">100</span>
+        </div>
+        <div style="width: 100%; height: 12px; background: rgba(0,0,0,0.8); border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.2);">
+            <div id="hp-bar" style="width: 100%; height: 100%; background: linear-gradient(90deg, #00aa00, #00ff00); transition: width 0.2s, background 0.2s;"></div>
         </div>
     </div>
-    <div id="kill-count">KILLS: 0</div>
+    <div id="kill-count" class="hud-panel">KILLS: 0</div>
     
-    <div id="controls-hint">
-        <div><span class="key">WASD</span> Move</div>
-        <div><span class="key">SPACE</span> Jump</div>
-        <div><span class="key">CLICK</span> Shoot</div>
-        <hr style="border-color: #444; margin: 5px 0;">
-        <div id="w-slot-1"><span class="key">1</span> AKM <span id="lock-1" class="locked">LOCKED (10 Kills)</span></div>
-        <div id="w-slot-2"><span class="key">2</span> Pistol <span id="lock-2" class="locked">LOCKED (3 Kills)</span></div>
-        <div id="w-slot-3"><span class="key">3</span> Hands <span class="unlocked"></span></div>
+    <div id="controls-hint" class="hud-panel">
+        <div style="margin-bottom: 15px; font-size: 14px; color: #ccc;">
+            <div style="margin-bottom: 5px;"><span class="key">WASD</span> Move</div>
+            <div style="margin-bottom: 5px;"><span class="key">SPACE</span> Jump</div>
+            <div><span class="key">CLICK</span> Shoot</div>
+        </div>
+        <div style="height: 1px; background: rgba(255,255,255,0.2); margin: 10px 0;"></div>
+        <div id="w-slot-1" class="weapon-slot"><span class="key">1</span> AKM <span id="lock-1" class="locked">LOCKED (10 Kills)</span></div>
+        <div id="w-slot-2" class="weapon-slot"><span class="key">2</span> Pistol <span id="lock-2" class="locked">LOCKED (3 Kills)</span></div>
+        <div id="w-slot-3" class="weapon-slot"><span class="key">3</span> Hands <span class="unlocked"></span></div>
+    </div>
+
+    <div id="radio-container" class="hud-panel">
+        <div id="radio-title">RADIO: OFF</div>
+        <div id="radio-controls">
+            <button id="radio-prev">⏮</button>
+            <button id="radio-play">▶</button>
+            <button id="radio-next">⏭</button>
+        </div>
     </div>
 </div>
 
@@ -158,7 +213,8 @@
         // Audio
         sfx_akm: '/akm.mp3',
         sfx_pistol: '/pistol.mp3',
-        sfx_enemy: '/enemy_shoot.mp3'
+        sfx_enemy: '/enemy_shoot.mp3',
+        sfx_ding: '/ding.mp3'
     };
 
     const WEAPONS = [
@@ -166,6 +222,62 @@
         { name: 'pistol', modelKey: 'pistol', fireRate: 400, auto: false, type: 'hitscan', id: 1 },
         { name: 'hands', modelKey: 'hands', fireRate: 600, auto: false, type: 'melee', range: 4, id: 2 }
     ];
+
+    // --- Radio System ---
+    const radioTracks = [
+        '/music1coolforthesummer.mp3',
+        '/music2mist.mp3',
+        '/music3likethat.mp3',
+        '/music4tellem.mp3',
+        '/music5maskoff.mp3',
+        '/music6timeless.mp3',
+        '/music790mh.mp3',
+        '/music8sky.mp3',
+        '/music10af1.mp3',
+        '/music11staywme.mp3',
+        '/music12moonlight.mp3',
+        '/music132kfreestyle.mp3'
+    ];
+    let currentTrackIdx = 0;
+    const radioAudio = new Audio();
+    radioAudio.volume = 0.2;
+    radioAudio.addEventListener('ended', nextTrack);
+
+    function playTrack(idx) {
+        currentTrackIdx = idx;
+        radioAudio.src = radioTracks[currentTrackIdx];
+        radioAudio.play().catch(e => console.log("Audio play prevented"));
+        const trackName = radioTracks[currentTrackIdx].replace('/', '').replace('.mp3', '').replace('music', '').replace(/[0-9]+/, '');
+        document.getElementById('radio-title').innerText = '🎵 ' + trackName;
+        document.getElementById('radio-play').innerText = '⏸';
+    }
+
+    function nextTrack() {
+        currentTrackIdx = (currentTrackIdx + 1) % radioTracks.length;
+        playTrack(currentTrackIdx);
+    }
+
+    function prevTrack() {
+        currentTrackIdx = (currentTrackIdx - 1 + radioTracks.length) % radioTracks.length;
+        playTrack(currentTrackIdx);
+    }
+
+    function toggleRadio() {
+        if (radioAudio.paused) {
+            if (!radioAudio.src) playTrack(currentTrackIdx);
+            else {
+                radioAudio.play();
+                document.getElementById('radio-play').innerText = '⏸';
+            }
+        } else {
+            radioAudio.pause();
+            document.getElementById('radio-play').innerText = '▶';
+        }
+    }
+
+    document.getElementById('radio-play').addEventListener('click', (e) => { e.stopPropagation(); toggleRadio(); });
+    document.getElementById('radio-next').addEventListener('click', (e) => { e.stopPropagation(); nextTrack(); });
+    document.getElementById('radio-prev').addEventListener('click', (e) => { e.stopPropagation(); prevTrack(); });
 
     // --- Globals ---
     let scene, camera, renderer, world, controls;
@@ -245,7 +357,8 @@
 
         // 5. Controls
         controls = new PointerLockControls(camera, document.body);
-        document.body.addEventListener('click', () => {
+        document.body.addEventListener('click', (e) => {
+            if (e.target.closest('#radio-container')) return; // Don't lock if clicking radio
             if(!controls.isLocked && !isGameOver) {
                 controls.lock();
                 // Resume Audio Context on interaction
@@ -262,7 +375,10 @@
         window.addEventListener('resize', onWindowResize);
         document.addEventListener('keydown', onKeyDown);
         document.addEventListener('keyup', onKeyUp);
-        document.addEventListener('mousedown', () => { isMouseDown = true; checkShoot(); });
+        document.addEventListener('mousedown', (e) => { 
+            if (e.target.closest('#radio-container')) return;
+            isMouseDown = true; checkShoot(); 
+        });
         document.addEventListener('mouseup', () => { isMouseDown = false; });
 
         // 8. Start Loop
@@ -295,6 +411,7 @@
         audioLoader.load(ASSETS.sfx_akm, (buffer) => { audioBuffers['akm'] = buffer; });
         audioLoader.load(ASSETS.sfx_pistol, (buffer) => { audioBuffers['pistol'] = buffer; });
         audioLoader.load(ASSETS.sfx_enemy, (buffer) => { audioBuffers['enemy'] = buffer; });
+        audioLoader.load(ASSETS.sfx_ding, (buffer) => { audioBuffers['ding'] = buffer; });
 
         manager.onLoad = () => {
             const loaderDiv = document.getElementById('loader');
@@ -418,30 +535,51 @@
         const raycaster = new THREE.Raycaster();
         const down = new THREE.Vector3(0, -1, 0);
         
-        // Try 30 times to find a valid floor
-        for(let i=0; i<30; i++) {
-            const x = (Math.random() - 0.5) * 60; // Wide search area
-            const z = (Math.random() - 0.5) * 60;
+        // 1. Try to find GREEN grass (Color-based smart spawning)
+        for(let i=0; i<50; i++) {
+            const x = (Math.random() - 0.5) * 100; // Wider search area
+            const z = (Math.random() - 0.5) * 100;
             
-            raycaster.set(new THREE.Vector3(x, 50, z), down);
-            // recursive: true is CRITICAL for imported GLTFs
+            raycaster.set(new THREE.Vector3(x, 100, z), down);
             const intersects = raycaster.intersectObjects(mapMeshes, true);
             
             if (intersects.length > 0) {
                 const hit = intersects[0];
-                // If it has face data, ensure it's pointing UP (floor, not wall)
-                if (!hit.face || hit.face.normal.y > 0.5) {
+                if (hit.face && hit.face.normal.y > 0.8) {
+                    // Check if material color is predominantly green
+                    let isGreen = false;
+                    if (hit.object.material) {
+                        let mat = hit.object.material;
+                        if (Array.isArray(mat)) mat = mat[hit.face.materialIndex];
+                        if (mat && mat.color) {
+                            const c = mat.color;
+                            if (c.g > c.r + 0.05 && c.g > c.b + 0.05) isGreen = true;
+                        }
+                    }
+                    
+                    if (isGreen) {
+                        return new CANNON.Vec3(hit.point.x, hit.point.y + 1.5, hit.point.z);
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback: Any flat surface pointing UP
+        for(let i=0; i<30; i++) {
+            const x = (Math.random() - 0.5) * 80;
+            const z = (Math.random() - 0.5) * 80;
+            raycaster.set(new THREE.Vector3(x, 100, z), down);
+            const intersects = raycaster.intersectObjects(mapMeshes, true);
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                if (hit.face && hit.face.normal.y > 0.8) {
                     return new CANNON.Vec3(hit.point.x, hit.point.y + 1.5, hit.point.z);
                 }
             }
         }
         
-        // FALLBACK: If all 30 raycasts fail, spawn randomly in the sky so they don't overlap
-        return new CANNON.Vec3(
-            (Math.random() - 0.5) * 20, 
-            10, 
-            (Math.random() - 0.5) * 20
-        );
+        // 3. Absolute Fallback: Sky
+        return new CANNON.Vec3((Math.random() - 0.5) * 20, 10, (Math.random() - 0.5) * 20);
     }
 
     function respawnEnemy(enemy, force = false) {
@@ -473,7 +611,7 @@
         // Update HUD
         document.getElementById('hp-val').innerText = '100';
         document.getElementById('hp-bar').style.width = '100%';
-        document.getElementById('hp-bar').style.background = '#00ff00';
+        document.getElementById('hp-bar').style.background = 'linear-gradient(90deg, #00aa00, #00ff00)';
         document.getElementById('kill-count').innerText = 'KILLS: 0';
         
         // Reset Player
@@ -550,6 +688,14 @@
         sound.play();
     }
 
+    function playDingSound() {
+        if (!audioBuffers['ding']) return;
+        const sound = new THREE.Audio(audioListener);
+        sound.setBuffer(audioBuffers['ding']);
+        sound.setVolume(0.8);
+        sound.play();
+    }
+
     function checkShoot() {
         if (!controls.isLocked || isGameOver) return;
         const now = Date.now();
@@ -616,11 +762,14 @@
                 enemy.deadUntil = Date.now() + 5000; // 5 seconds respawn delay
                 enemy.body.position.set(0, -50, 0); 
                 
+                // Play Ding Sound
+                playDingSound();
+
                 // Vampirism: Heal on Kill
                 playerHealth = Math.min(100, playerHealth + 30);
                 document.getElementById('hp-val').innerText = Math.max(0, playerHealth);
                 document.getElementById('hp-bar').style.width = Math.max(0, playerHealth) + '%';
-                document.getElementById('hp-bar').style.background = playerHealth <= 30 ? '#ff0000' : '#00ff00';
+                document.getElementById('hp-bar').style.background = playerHealth <= 30 ? 'linear-gradient(90deg, #aa0000, #ff0000)' : 'linear-gradient(90deg, #00aa00, #00ff00)';
 
                 // Progression
                 killCount++;
@@ -694,7 +843,7 @@
         // Update UI
         document.getElementById('hp-val').innerText = Math.max(0, playerHealth);
         document.getElementById('hp-bar').style.width = Math.max(0, playerHealth) + '%';
-        document.getElementById('hp-bar').style.background = playerHealth <= 30 ? '#ff0000' : '#00ff00';
+        document.getElementById('hp-bar').style.background = playerHealth <= 30 ? 'linear-gradient(90deg, #aa0000, #ff0000)' : 'linear-gradient(90deg, #00aa00, #00ff00)';
 
         // Red Flash
         const overlay = document.getElementById('damage-overlay');
