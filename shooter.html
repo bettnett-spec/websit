@@ -333,7 +333,7 @@
 
     // --- Globals ---
     const SECRET_KEY = 'v8$M9z!Qp2X&7L#kR5@W1nE*Jt4Y6uG';
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzH-_aplPHDSGo9T8GgOiNypAaoithNRSUmYYs7_Sw0-_ztkMItJhleoPdkkYMUvb1ElQ/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyddPWRAvwObhiU8OumaozF5oeT4TQaiYTVU4fDYrEkTcQ21URHC2PmfMUjKWI0DxpJ/exec';
 
     let playerName = "";
     let gameStarted = false;
@@ -481,27 +481,46 @@
                     document.getElementById('start-screen').style.display = 'flex';
                 }, 500);
             }
-            document.getElementById('start-game-btn').addEventListener('click', () => {
+            document.getElementById('start-game-btn').addEventListener('click', async () => {
                 const name = document.getElementById('player-name-input').value.trim();
                 if (!name) return alert("Please enter a name to play.");
                 
-                const lowerName = name.toLowerCase();
-                const blockedWords = ['fuck','shit','bitch','cunt','nigga','nigger','fag','dick','cock','pussy','slut','whore','hitler','nazi','asshole'];
-                if (blockedWords.some(w => lowerName.includes(w))) {
-                    alert("Name blocked. Please select a different name.");
-                    return;
-                }
-                
-                playerName = name;
-                document.getElementById('start-screen').style.display = 'none';
-                gameStarted = true;
-                
-                spawnEnemies();
-                switchWeapon(2); // Start with Hands
-                
-                if (!isGameOver) controls.lock();
-                if (audioListener.context.state === 'suspended') {
-                    audioListener.context.resume();
+                const btn = document.getElementById('start-game-btn');
+                const originalText = btn.innerText;
+                btn.innerText = "CHECKING...";
+                btn.disabled = true;
+
+                try {
+                    const response = await fetch(`${SCRIPT_URL}?checkName=${encodeURIComponent(name)}`);
+                    const result = await response.text();
+                    
+                    if (result.trim() === 'Banned') {
+                        alert("Name blocked. Please choose a different name.");
+                        btn.innerText = originalText;
+                        btn.disabled = false;
+                        return;
+                    } else if (result.trim() === 'Clear') {
+                        playerName = name;
+                        document.getElementById('start-screen').style.display = 'none';
+                        gameStarted = true;
+                        
+                        spawnEnemies();
+                        switchWeapon(2); // Start with Hands
+                        
+                        if (!isGameOver) controls.lock();
+                        if (audioListener.context.state === 'suspended') {
+                            audioListener.context.resume();
+                        }
+                    } else {
+                        alert("Error checking name. Please try again.");
+                        btn.innerText = originalText;
+                        btn.disabled = false;
+                    }
+                } catch (error) {
+                    console.error("Name check error:", error);
+                    alert("Network error checking name. Please try again.");
+                    btn.innerText = originalText;
+                    btn.disabled = false;
                 }
             });
         };
