@@ -526,7 +526,9 @@
                 debugMesh: debugMesh, 
                 sound: sound,
                 deadUntil: 0,
-                lastShot: 0 
+                lastShot: 0,
+                spawnTime: 0,
+                isBackingUp: false
             });
         }
     }
@@ -610,6 +612,8 @@
         enemy.body.position.copy(pos);
         enemy.body.velocity.set(0,0,0);
         enemy.body.wakeUp();
+        enemy.spawnTime = Date.now();
+        enemy.isBackingUp = false;
     }
 
     function getTargetEnemyCount(kills) {
@@ -978,15 +982,39 @@
                     }
                     
                     // Move towards player
-                    if (dist > 5) {
-                        const dir = new THREE.Vector3().subVectors(physicsBody.position, e.body.position);
-                        dir.y = 0;
-                        if (dir.lengthSq() > 0) {
-                            dir.normalize();
-                            e.body.velocity.x = dir.x * 3.5;
-                            e.body.velocity.z = dir.z * 3.5;
+                    if (now - e.spawnTime > 1000) {
+                        // Determine backing up state
+                        if (dist <= 5 && dist > 2) {
+                            e.isBackingUp = true;
+                        } else if (dist >= 8 || dist <= 2) {
+                            e.isBackingUp = false;
+                        }
+
+                        if (e.isBackingUp) {
+                            // Back up to 8m
+                            const dir = new THREE.Vector3().subVectors(e.body.position, physicsBody.position);
+                            dir.y = 0;
+                            if (dir.lengthSq() > 0) {
+                                dir.normalize();
+                                e.body.velocity.x = dir.x * 3.5;
+                                e.body.velocity.z = dir.z * 3.5;
+                            }
+                        } else if (dist > 8) {
+                            // Move towards player
+                            const dir = new THREE.Vector3().subVectors(physicsBody.position, e.body.position);
+                            dir.y = 0;
+                            if (dir.lengthSq() > 0) {
+                                dir.normalize();
+                                e.body.velocity.x = dir.x * 3.5;
+                                e.body.velocity.z = dir.z * 3.5;
+                            }
+                        } else {
+                            // Stop moving (between 5m and 8m when not backing up, or closer than 2m)
+                            e.body.velocity.x = 0;
+                            e.body.velocity.z = 0;
                         }
                     } else {
+                        // Spawn delay - don't move
                         e.body.velocity.x = 0;
                         e.body.velocity.z = 0;
                     }
