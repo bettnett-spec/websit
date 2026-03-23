@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FPS - Dust2 Proto</title>
+    <title>Arena Survival</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
         #loader {
@@ -116,6 +116,13 @@
         .lb-btn:hover { background: #00cc00; }
         .lb-btn:disabled { background: #555; cursor: not-allowed; }
         #name-input { padding: 10px; width: 60%; background: #222; border: 1px solid #555; color: white; margin-bottom: 10px; font-size: 16px; text-align: center; }
+        .lb-tab {
+            background: #222; color: #888; border: 2px solid #444;
+            padding: 8px 16px; cursor: pointer; font-family: inherit;
+            font-weight: bold; border-radius: 4px; transition: all 0.2s;
+        }
+        .lb-tab:hover { background: #333; color: #fff; }
+        .lb-tab.active { background: #00ff00; color: #000; border-color: #00ff00; }
     </style>
 <link rel="stylesheet" href="/index.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.19.0/js/md5.min.js"></script>
@@ -131,7 +138,7 @@
 <div id="damage-overlay"></div>
 
 <div id="start-screen" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 3000; flex-direction: column; justify-content: center; align-items: center; color: white;">
-    <h1 style="color: #00ff00; font-size: 48px; margin-bottom: 20px; text-shadow: 0 0 20px #00ff00; letter-spacing: 5px;">DUST2 SURVIVAL</h1>
+    <h1 style="color: #00ff00; font-size: 48px; margin-bottom: 20px; text-shadow: 0 0 20px #00ff00; letter-spacing: 5px;">ARENA SURVIVAL</h1>
     <input type="text" id="player-name-input" placeholder="Enter your name" maxlength="15" style="padding: 15px; width: 300px; background: #222; border: 2px solid #00ff00; color: white; font-size: 20px; text-align: center; margin-bottom: 20px; border-radius: 8px;">
     <button id="start-game-btn" class="lb-btn" style="font-size: 24px; padding: 15px 40px;">START GAME</button>
 </div>
@@ -141,7 +148,12 @@
     <p style="font-size: 20px; margin-bottom: 20px;">Kills: <span id="final-score" style="color: #00ff00; font-weight: bold; font-size: 24px;">0</span></p>
     
     <div id="leaderboard-section" style="display: none; width: 100%;">
-        <h3 style="text-align: center; color: #00ff00; margin-top: 0;">TOP 10</h3>
+        <h3 style="text-align: center; color: #00ff00; margin-top: 0;">LEADERBOARD</h3>
+        <div id="lb-tabs" style="display: flex; justify-content: center; gap: 10px; margin-bottom: 15px;">
+            <button class="lb-tab active" data-timeframe="24h">24 Hours</button>
+            <button class="lb-tab" data-timeframe="7d">7 Days</button>
+            <button class="lb-tab" data-timeframe="all">All Time</button>
+        </div>
         <table id="leaderboard-table">
             <thead><tr><th>Rank</th><th>Name</th><th>Score</th></tr></thead>
             <tbody id="leaderboard-body"></tbody>
@@ -970,9 +982,9 @@
         }
     }
 
-    async function getLeaderboard() {
+    async function getLeaderboard(timeframe = '24h') {
         try {
-            const response = await fetch(`${SCRIPT_URL}?gameId=Game1`);
+            const response = await fetch(`${SCRIPT_URL}?gameId=Game1&timeframe=${timeframe}`);
             const data = await response.json();
             return data;
         } catch (error) {
@@ -981,25 +993,10 @@
         }
     }
 
-    async function showLeaderboardUI() {
-        document.getElementById('leaderboard-modal').style.display = 'flex';
-        document.getElementById('leaderboard-section').style.display = 'block';
-        document.getElementById('final-score').innerText = killCount;
-        
-        document.getElementById('leaderboard-body').innerHTML = '<tr><td colspan="3">Submitting score...</td></tr>';
-        
-        if (playerName) {
-            const result = await submitScore(playerName, killCount);
-            if (result === 'Inappropriate Name') {
-                alert('Inappropriate Name. Please restart and choose another one.');
-                document.getElementById('leaderboard-body').innerHTML = '<tr><td colspan="3">Score rejected.</td></tr>';
-                return;
-            }
-        }
-        
+    async function loadLeaderboardData(timeframe) {
         document.getElementById('leaderboard-body').innerHTML = '<tr><td colspan="3">Loading leaderboard...</td></tr>';
         
-        const lbData = await getLeaderboard();
+        const lbData = await getLeaderboard(timeframe);
         let html = '';
         
         lbData.forEach((entry, idx) => {
@@ -1016,6 +1013,38 @@
         if (lbData.length === 0) html = '<tr><td colspan="3">No scores yet!</td></tr>';
         document.getElementById('leaderboard-body').innerHTML = html;
     }
+
+    async function showLeaderboardUI() {
+        document.getElementById('leaderboard-modal').style.display = 'flex';
+        document.getElementById('leaderboard-section').style.display = 'block';
+        document.getElementById('final-score').innerText = killCount;
+        
+        // Reset tabs to 24h active
+        document.querySelectorAll('.lb-tab').forEach(t => t.classList.remove('active'));
+        document.querySelector('.lb-tab[data-timeframe="24h"]').classList.add('active');
+        
+        document.getElementById('leaderboard-body').innerHTML = '<tr><td colspan="3">Submitting score...</td></tr>';
+        
+        if (playerName) {
+            const result = await submitScore(playerName, killCount);
+            if (result === 'Inappropriate Name') {
+                alert('Inappropriate Name. Please restart and choose another one.');
+                document.getElementById('leaderboard-body').innerHTML = '<tr><td colspan="3">Score rejected.</td></tr>';
+                return;
+            }
+        }
+        
+        await loadLeaderboardData('24h');
+    }
+
+    document.querySelectorAll('.lb-tab').forEach(tab => {
+        tab.addEventListener('click', async (e) => {
+            document.querySelectorAll('.lb-tab').forEach(t => t.classList.remove('active'));
+            e.target.classList.add('active');
+            const timeframe = e.target.getAttribute('data-timeframe');
+            await loadLeaderboardData(timeframe);
+        });
+    });
 
     document.getElementById('play-again-btn').addEventListener('click', () => {
         document.getElementById('leaderboard-modal').style.display = 'none';
