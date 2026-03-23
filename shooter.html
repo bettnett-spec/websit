@@ -99,8 +99,26 @@
             font-weight: bold; transform: scale(1.05) translateX(10px); 
             opacity: 1;
         }
+
+        #leaderboard-modal {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(10, 10, 10, 0.95); border: 2px solid #00ff00;
+            color: white; padding: 30px; border-radius: 10px; z-index: 2000;
+            display: none; flex-direction: column; align-items: center;
+            box-shadow: 0 0 30px rgba(0, 255, 0, 0.3); min-width: 400px;
+            pointer-events: auto;
+        }
+        #leaderboard-modal h2 { color: #ff0055; margin-top: 0; text-shadow: 2px 2px 0 #000; font-size: 36px; letter-spacing: 2px; }
+        #leaderboard-table { width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 20px; }
+        #leaderboard-table th, #leaderboard-table td { border: 1px solid #333; padding: 10px; text-align: center; }
+        #leaderboard-table th { background: #222; color: #00aaff; }
+        .lb-btn { background: #00ff00; color: #000; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; border-radius: 5px; margin-top: 10px; font-size: 16px; }
+        .lb-btn:hover { background: #00cc00; }
+        .lb-btn:disabled { background: #555; cursor: not-allowed; }
+        #name-input { padding: 10px; width: 60%; background: #222; border: 1px solid #555; color: white; margin-bottom: 10px; font-size: 16px; text-align: center; }
     </style>
 <link rel="stylesheet" href="/index.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.19.0/js/md5.min.js"></script>
 </head>
 <body>
 
@@ -111,6 +129,28 @@
 
 <div id="vignette"></div>
 <div id="damage-overlay"></div>
+
+<div id="leaderboard-modal">
+    <h2>GAME OVER</h2>
+    <p style="font-size: 20px; margin-bottom: 20px;">Kills: <span id="final-score" style="color: #00ff00; font-weight: bold; font-size: 24px;">0</span></p>
+    
+    <div id="submit-section" style="width: 100%; text-align: center;">
+        <input type="text" id="name-input" placeholder="Enter your name" maxlength="15">
+        <br>
+        <button class="lb-btn" id="submit-score-btn">Submit Score</button>
+    </div>
+    
+    <div id="leaderboard-section" style="display: none; width: 100%;">
+        <h3 style="text-align: center; color: #00ff00; margin-top: 0;">TOP 10</h3>
+        <table id="leaderboard-table">
+            <thead><tr><th>Rank</th><th>Name</th><th>Score</th></tr></thead>
+            <tbody id="leaderboard-body"></tbody>
+        </table>
+        <div style="text-align: center;">
+            <button class="lb-btn" id="play-again-btn">Play Again</button>
+        </div>
+    </div>
+</div>
 
 <!-- Hidden root to satisfy index.tsx if it runs -->
 <div id="root" style="display: none;"></div>
@@ -280,6 +320,9 @@
     document.getElementById('radio-prev').addEventListener('click', (e) => { e.stopPropagation(); prevTrack(); });
 
     // --- Globals ---
+    const SECRET_KEY = 'v8$M9z!Qp2X&7L#kR5@W1nE*Jt4Y6uG';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzH-_aplPHDSGo9T8GgOiNypAaoithNRSUmYYs7_Sw0-_ztkMItJhleoPdkkYMUvb1ElQ/exec';
+
     let scene, camera, renderer, world, controls;
     let clock, lastTime;
     let physicsBody; 
@@ -376,7 +419,7 @@
         document.addEventListener('keydown', onKeyDown);
         document.addEventListener('keyup', onKeyUp);
         document.addEventListener('mousedown', (e) => { 
-            if (e.target.closest('#radio-container')) return;
+            if (e.target.closest('#radio-container') || e.target.closest('#leaderboard-modal')) return;
             isMouseDown = true; checkShoot(); 
         });
         document.addEventListener('mouseup', () => { isMouseDown = false; });
@@ -493,8 +536,8 @@
         const debugGeometry = new THREE.BoxGeometry(0.8, 1.8, 0.8);
         const debugMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true });
 
-        // Pool of 8 enemies maximum
-        for (let i = 0; i < 8; i++) {
+        // Pool of 15 enemies maximum
+        for (let i = 0; i < 15; i++) {
             const clonedMesh = clone(ASSETS.enemyModel);
             clonedMesh.traverse(child => { if(child.isMesh) child.castShadow = true; });
 
@@ -617,13 +660,12 @@
     }
 
     function getTargetEnemyCount(kills) {
-        if (kills < 3) return 1;
-        if (kills < 10) return 2;
-        if (kills < 15) return 3;
-        if (kills < 25) return 4;
-        if (kills < 35) return 5;
-        if (kills < 50) return 6;
-        return 8;
+        if (kills < 3) return 2;
+        if (kills < 10) return 5;
+        if (kills < 20) return 8;
+        if (kills < 30) return 10;
+        if (kills < 50) return 12;
+        return 15;
     }
 
     function resetGame() {
@@ -798,16 +840,6 @@
                 killCount++;
                 document.getElementById('kill-count').innerText = `KILLS: ${killCount}`;
                 
-                // Win Condition
-                if (killCount === 100) {
-                    document.exitPointerLock();
-                    setTimeout(() => {
-                        alert("YOU WIN! 100 KILLS REACHED!");
-                        resetGame();
-                    }, 100);
-                    return;
-                }
-                
                 // Auto Switch Logic
                 if (killCount === UNLOCKS.pistol && currentWeaponIdx > 1) switchWeapon(1);
                 if (killCount === UNLOCKS.akm && currentWeaponIdx > 0) switchWeapon(0);
@@ -881,11 +913,90 @@
             isGameOver = true;
             document.exitPointerLock(); 
             setTimeout(() => {
-                alert("GAME OVER! KILLS: " + killCount);
-                resetGame();
+                showLeaderboardUI();
             }, 100);
         }
     }
+
+    // --- Leaderboard Logic ---
+    async function submitScore(name, score) {
+        const hash = md5(score + SECRET_KEY);
+        const formData = new URLSearchParams();
+        formData.append('gameId', 'Game1');
+        formData.append('name', name);
+        formData.append('score', score);
+        formData.append('hash', hash);
+
+        try {
+            const response = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.text();
+            return result;
+        } catch (error) {
+            console.error('Error submitting score:', error);
+            return 'Error';
+        }
+    }
+
+    async function getLeaderboard() {
+        try {
+            const response = await fetch(`${SCRIPT_URL}?gameId=Game1`);
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('Error fetching leaderboard:', error);
+            return [];
+        }
+    }
+
+    function showLeaderboardUI() {
+        document.getElementById('leaderboard-modal').style.display = 'flex';
+        document.getElementById('submit-section').style.display = 'block';
+        document.getElementById('leaderboard-section').style.display = 'none';
+        document.getElementById('final-score').innerText = killCount;
+    }
+
+    document.getElementById('submit-score-btn').addEventListener('click', async () => {
+        const name = document.getElementById('name-input').value.trim();
+        if (!name) return alert('Please enter a name');
+        
+        const btn = document.getElementById('submit-score-btn');
+        btn.innerText = 'Submitting...';
+        btn.disabled = true;
+        
+        const result = await submitScore(name, killCount);
+        
+        btn.innerText = 'Submit Score';
+        btn.disabled = false;
+        
+        if (result === 'Inappropriate Name') {
+            alert('Inappropriate Name. Please choose another one.');
+            return;
+        }
+        
+        // Show leaderboard
+        document.getElementById('submit-section').style.display = 'none';
+        document.getElementById('leaderboard-section').style.display = 'block';
+        document.getElementById('leaderboard-body').innerHTML = '<tr><td colspan="3">Loading...</td></tr>';
+        
+        const lbData = await getLeaderboard();
+        let html = '';
+        lbData.forEach((entry, idx) => {
+            html += `<tr><td>${idx + 1}</td><td>${entry.name}</td><td>${entry.score}</td></tr>`;
+        });
+        if (lbData.length === 0) html = '<tr><td colspan="3">No scores yet!</td></tr>';
+        document.getElementById('leaderboard-body').innerHTML = html;
+    });
+
+    document.getElementById('play-again-btn').addEventListener('click', () => {
+        document.getElementById('leaderboard-modal').style.display = 'none';
+        resetGame();
+        if (!controls.isLocked) {
+            controls.lock();
+        }
+    });
 
     function animate() {
         requestAnimationFrame(animate);
@@ -983,23 +1094,7 @@
                     
                     // Move towards player
                     if (now - e.spawnTime > 1000) {
-                        // Determine backing up state
-                        if (dist <= 5 && dist > 2) {
-                            e.isBackingUp = true;
-                        } else if (dist >= 8 || dist <= 2) {
-                            e.isBackingUp = false;
-                        }
-
-                        if (e.isBackingUp) {
-                            // Back up to 8m
-                            const dir = new THREE.Vector3().subVectors(e.body.position, physicsBody.position);
-                            dir.y = 0;
-                            if (dir.lengthSq() > 0) {
-                                dir.normalize();
-                                e.body.velocity.x = dir.x * 3.5;
-                                e.body.velocity.z = dir.z * 3.5;
-                            }
-                        } else if (dist > 8) {
+                        if (dist >= 17) {
                             // Move towards player
                             const dir = new THREE.Vector3().subVectors(physicsBody.position, e.body.position);
                             dir.y = 0;
@@ -1008,8 +1103,30 @@
                                 e.body.velocity.x = dir.x * 3.5;
                                 e.body.velocity.z = dir.z * 3.5;
                             }
+                        } else if (dist >= 11 && dist <= 13) {
+                            // Back up
+                            const dir = new THREE.Vector3().subVectors(e.body.position, physicsBody.position);
+                            dir.y = 0;
+                            if (dir.lengthSq() > 0) {
+                                dir.normalize();
+                                
+                                // Prevent phasing through walls while backing up
+                                const startPos = new THREE.Vector3(e.body.position.x, e.body.position.y, e.body.position.z);
+                                const raycaster = new THREE.Raycaster(startPos, dir);
+                                raycaster.far = 1.5; // Check 1.5m behind
+                                const intersects = raycaster.intersectObjects(mapMeshes, true);
+                                
+                                if (intersects.length > 0) {
+                                    // Wall behind, stop backing up
+                                    e.body.velocity.x = 0;
+                                    e.body.velocity.z = 0;
+                                } else {
+                                    e.body.velocity.x = dir.x * 3.5;
+                                    e.body.velocity.z = dir.z * 3.5;
+                                }
+                            }
                         } else {
-                            // Stop moving (between 5m and 8m when not backing up, or closer than 2m)
+                            // Stand ground (dist <= 10, or 13 < dist < 17)
                             e.body.velocity.x = 0;
                             e.body.velocity.z = 0;
                         }
