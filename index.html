@@ -179,6 +179,7 @@
             transition: 0.2s;
             text-decoration: none;
             color: inherit;
+            user-select: none; /* Help prevent text selection on link block */
         }
         .game-card:hover { border-color: var(--docs-blue); background: #f8f9fa; }
         .game-card h3 { margin: 0; font-size: 18px; font-weight: 500; color: #1155cc; text-decoration: underline; }
@@ -419,7 +420,7 @@
             <p>This document contains the official listing of interactive projects hosted on this domain. Select an entry below to launch the respective application.</p>
 
             <!-- 1. Tunnel Rush -->
-            <a href="tunnelrush.html" class="game-card">
+            <a href="tunnelrush.html" class="game-card" contenteditable="false">
                 <div>
                     <h3>1. Tunnel Rush / Void Rush</h3>
                     <p>Navigate a high-speed neon tunnel, dodging shifting geometric obstacles.</p>
@@ -429,7 +430,7 @@
             </a>
 
             <!-- 2. Shooter -->
-            <a href="shooter.html" class="game-card">
+            <a href="shooter.html" class="game-card" contenteditable="false">
                 <div>
                     <h3>2. Wave Survival FPS</h3>
                     <p>Combat-ready wave survival simulator. Deploy your arsenal and survive the onslaught.</p>
@@ -439,7 +440,7 @@
             </a>
 
             <!-- 3. Obby -->
-            <a href="platformer.html" class="game-card">
+            <a href="platformer.html" class="game-card" contenteditable="false">
                 <div>
                     <h3>3. Infinite Random Obby</h3>
                     <p>Procedurally generated 3D platformer featuring endless ascending levels.</p>
