@@ -5,84 +5,93 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Maxbarkerbumsex - Google Docs</title>
     <link rel="icon" href="https://ssl.gstatic.com/docs/doclist/images/infinite_arrow_favicon_5.ico">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Google+Sans:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Google+Sans:wght@400;500&family=EB+Garamond:wght@400;700&family=Courier+Prime&family=Lexend:wght@300;400;500&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --docs-blue: #1a73e8;
+            --docs-bg: #f9fbfd;
+            --toolbar-bg: #edf2fa;
+            --border-color: #dadce0;
+            --text-main: #202124;
+            --text-secondary: #5f6368;
+        }
+
         body {
             margin: 0;
             padding: 0;
-            background-color: #f9fbfd;
+            background-color: var(--docs-bg);
             font-family: 'Roboto', sans-serif;
-            color: #202124;
+            color: var(--text-main);
             height: 100vh;
             display: flex;
             flex-direction: column;
-            overflow: hidden; /* Hide scrollbars on body */
+            overflow: hidden;
         }
 
-        /* --- Header (Toolbar & Menu) --- */
+        /* --- Header --- */
         #header {
             background-color: white;
             padding: 8px 16px;
             display: flex;
             align-items: center;
-            border-bottom: 1px solid #dadce0;
+            border-bottom: 1px solid var(--border-color);
             flex-shrink: 0;
+            z-index: 1000;
         }
 
-        #doc-icon {
-            width: 40px;
-            height: 40px;
-            margin-right: 16px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        #doc-icon img {
-            width: 36px;
-            height: 36px;
-        }
+        #doc-icon { margin-right: 12px; cursor: pointer; }
+        #doc-icon img { width: 36px; height: 36px; }
 
-        #doc-info {
-            display: flex;
-            flex-direction: column;
-        }
-
+        #doc-info { display: flex; flex-direction: column; }
         #doc-title {
             font-family: 'Google Sans', sans-serif;
             font-size: 18px;
             color: #202124;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
             cursor: text;
-            line-height: 20px;
-        }
-
-        #menu-bar {
-            display: flex;
-            gap: 12px;
-            font-size: 14px;
-            color: #5f6368;
-            cursor: default;
-        }
-
-        .menu-item {
-            cursor: pointer;
-            padding: 2px 6px;
+            padding: 2px 4px;
             border-radius: 4px;
-            user-select: none;
+            width: fit-content;
         }
-        .menu-item:hover {
-            background-color: #f1f3f4;
-            color: #202124;
-        }
+        #doc-title:hover { background: #f1f3f4; }
 
-        /* --- Toolbar (Fake) --- */
+        #menu-bar { display: flex; gap: 4px; font-size: 14px; color: var(--text-secondary); cursor: default; }
+        .menu-item { padding: 2px 8px; border-radius: 4px; cursor: pointer; position: relative; }
+        .menu-item:hover { background-color: #f1f3f4; color: #202124; }
+
+        /* --- Dropdowns --- */
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: white;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            min-width: 200px;
+            padding: 8px 0;
+            z-index: 2000;
+        }
+        .menu-item:hover .dropdown-content { display: block; }
+        .dropdown-item {
+            padding: 6px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #202124;
+            white-space: nowrap;
+            font-size: 14px;
+        }
+        .dropdown-item:hover { background-color: #f1f3f4; }
+        .dropdown-shortcut { color: #888; font-size: 12px; margin-left: 20px; }
+
+        /* --- Toolbar --- */
         #toolbar {
-            background-color: #edf2fa;
+            background-color: var(--toolbar-bg);
             padding: 6px 24px;
             display: flex;
-            gap: 20px;
+            gap: 12px;
             border-radius: 24px;
             margin: 8px 16px;
             width: fit-content;
@@ -90,95 +99,92 @@
             flex-shrink: 0;
         }
         
-        .tool-separator {
-            width: 1px;
-            height: 20px;
-            background-color: #dadce0;
-        }
-
+        .tool-separator { width: 1px; height: 20px; background-color: var(--border-color); }
+        
         .tool-icon {
             font-size: 18px;
-            color: #5f6368;
+            color: var(--text-secondary);
             cursor: pointer;
-            width: 24px;
-            height: 24px;
+            width: 28px;
+            height: 28px;
             display: flex;
             align-items: center;
             justify-content: center;
             border-radius: 4px;
+            user-select: none;
         }
-        .tool-icon:hover {
-            background-color: rgba(0,0,0,0.05);
+        .tool-icon:hover { background-color: rgba(0,0,0,0.05); }
+
+        select.font-select {
+            background: transparent;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            outline: none;
+            padding: 2px 4px;
+            font-family: inherit;
+        }
+
+        /* --- Hint Banner --- */
+        #hint-banner {
+            margin: 0 16px 8px 16px;
+            background: #fff8e1;
+            border: 1px solid #ffe082;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #795548;
+            flex-shrink: 0;
         }
 
         /* --- Main Document Area --- */
         #main-area {
             flex-grow: 1;
-            background-color: #f9fbfd;
             display: flex;
             justify-content: center;
-            overflow-y: auto; /* Scroll ONLY the document area */
-            padding-top: 24px;
+            overflow-y: auto;
+            padding-top: 10px;
             padding-bottom: 60px;
         }
 
         #document-page {
-            width: 816px; /* Standard A4 width approx */
-            min-height: 1056px; /* A4 height */
+            width: 816px;
+            min-height: 1056px;
             background-color: white;
             box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
-            padding: 96px; /* Standard margins */
+            padding: 96px;
             box-sizing: border-box;
             position: relative;
             outline: none;
+            transition: font-family 0.2s;
         }
 
         /* --- Content Styling --- */
-        h1 {
-            font-family: 'Google Sans', sans-serif;
-            font-size: 26px; /* Title size */
-            margin-top: 0;
-            margin-bottom: 12px;
-            color: #000;
-            font-weight: 400;
-        }
-        
-        h2 {
-            font-family: 'Google Sans', sans-serif;
-            font-size: 20px;
-            margin-top: 24px;
-            margin-bottom: 10px;
-            color: #000;
-            font-weight: 400;
-        }
+        h1 { font-family: 'Google Sans', sans-serif; font-size: 26px; margin: 0 0 12px; font-weight: 400; }
+        h2 { font-family: 'Google Sans', sans-serif; font-size: 20px; margin: 24px 0 10px; font-weight: 400; }
+        p { font-size: 15px; line-height: 1.6; margin-bottom: 16px; }
 
-        p {
-            font-size: 15px; /* approx 11pt */
-            line-height: 1.6;
+        .game-card {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
             margin-bottom: 16px;
-            margin-top: 0;
-        }
-
-        .game-link {
-            color: #1155cc;
-            text-decoration: underline;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             cursor: pointer;
-            font-weight: 500;
+            transition: 0.2s;
+            text-decoration: none;
+            color: inherit;
         }
-        .game-link:hover {
-            color: #2a7ade;
-        }
+        .game-card:hover { border-color: var(--docs-blue); background: #f8f9fa; }
+        .game-card h3 { margin: 0; font-size: 18px; font-weight: 500; color: #1155cc; text-decoration: underline; }
+        .game-card p { margin: 4px 0; font-size: 14px; color: #333; }
+        .game-card span { font-size: 13px; color: var(--text-secondary); font-style: italic; }
 
-        ul {
-            padding-left: 20px;
-            margin-top: 0;
-        }
-        li {
-            margin-bottom: 12px;
-            line-height: 1.5;
-        }
-
-        /* Cursor blinking animation */
         .cursor {
             display: inline-block;
             width: 1px;
@@ -186,158 +192,451 @@
             background-color: black;
             animation: blink 1s step-end infinite;
             vertical-align: text-bottom;
-            margin-left: 1px;
+        }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        /* --- Radio Player UI --- */
+        #radio-modal {
+            display: none;
+            position: fixed;
+            top: 100px;
+            right: 40px;
+            width: 320px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+            padding: 20px;
+            z-index: 5000;
+            border: 1px solid var(--border-color);
         }
 
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0; }
+        .disk-box {
+            width: 160px;
+            height: 160px;
+            margin: 0 auto 15px;
+            border-radius: 50%;
+            background: #111;
+            background-image: repeating-radial-gradient(circle, #222, #111 2px, #333 4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: spin 4s linear infinite;
+            animation-play-state: paused;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            position: relative;
+            border: 4px solid #333;
         }
-        
-        /* Account Circle */
-        .account-circle {
-            width: 32px; 
-            height: 32px; 
-            background-color: #a142f4; /* Purple for user */
-            border-radius: 50%; 
+        .disk-center {
+            width: 50px;
+            height: 50px;
+            background: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            color: #000;
+            font-weight: bold;
+            z-index: 2;
+            text-align: center;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.3);
+        }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        .radio-controls { display: flex; flex-direction: column; gap: 12px; }
+        .playback-row { display: flex; justify-content: center; align-items: center; gap: 24px; }
+        .p-btn { cursor: pointer; font-size: 24px; color: var(--text-secondary); transition: color 0.1s; }
+        .p-btn:hover { color: var(--docs-blue); }
+        .main-play { font-size: 44px; color: var(--docs-blue); }
+
+        .song-list-scroll {
+            max-height: 140px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            margin-top: 10px;
+            padding: 8px;
+            border-radius: 6px;
+            background: #fafafa;
+        }
+        .song-item { 
             display: flex; 
             align-items: center; 
-            justify-content: center; 
-            font-size: 16px; 
-            color: white;
-            cursor: pointer;
+            gap: 10px; 
+            padding: 6px 0; 
+            border-bottom: 1px solid #eee; 
+            font-size: 13px;
         }
-        
-        /* Share Button */
+        .song-item:last-child { border-bottom: none; }
+        .song-item input[type="radio"] { cursor: pointer; margin: 0; }
+        .song-item input[type="checkbox"] { cursor: pointer; margin: 0; width: 14px; height: 14px; }
+
+        /* --- Footer Stats --- */
+        #status-bar {
+            background: white;
+            border-top: 1px solid var(--border-color);
+            padding: 4px 16px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 20px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            flex-shrink: 0;
+        }
+
         .share-btn {
-            height: 36px; 
-            padding: 0 24px;
-            background-color: #c2e7ff; 
-            border-radius: 18px; 
-            margin-left: 16px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            font-family: 'Google Sans'; 
-            font-size: 14px; 
-            font-weight: 500; 
-            color: #001d35; 
-            cursor: pointer;
-            transition: background-color 0.2s;
+            height: 36px; padding: 0 24px;
+            background-color: #c2e7ff; border-radius: 18px;
+            margin-left: 16px; display: flex; align-items: center;
+            font-family: 'Google Sans'; font-size: 14px; font-weight: 500;
+            color: #001d35; cursor: pointer;
+            transition: background 0.2s, box-shadow 0.2s;
         }
-        .share-btn:hover {
-            background-color: #b3d7ef;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-        }
+        .share-btn:hover { background-color: #b3d7f0; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
 
+        /* --- Toast Notification --- */
+        #toast {
+            position: fixed;
+            bottom: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #323232;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-size: 14px;
+            display: none;
+            z-index: 9999;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
     </style>
 </head>
 <body>
 
     <div id="header">
-        <div id="doc-icon">
-            <img src="https://upload.wikimedia.org/wikipedia/commons/0/01/Google_Docs_logo_%282014-2020%29.svg" alt="Docs Icon">
+        <div id="doc-icon" onclick="window.open('https://docs.google.com', '_blank')" title="Go to Docs home">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/0/01/Google_Docs_logo_%282014-2020%29.svg" alt="Docs">
         </div>
         <div id="doc-info">
-            <div id="doc-title">Maxbarkerbumsex</div>
+            <div id="doc-title" contenteditable="true">Maxbarkerbumsex</div>
             <div id="menu-bar">
-                <div class="menu-item">File</div>
-                <div class="menu-item">Edit</div>
-                <div class="menu-item">View</div>
-                <div class="menu-item">Insert</div>
-                <div class="menu-item">Format</div>
-                <div class="menu-item">Tools</div>
+                <div class="menu-item">File
+                    <div class="dropdown-content">
+                        <div class="dropdown-item"><span>📄 New</span><span class="dropdown-shortcut">Ctrl+N</span></div>
+                        <div class="dropdown-item"><span>📂 Open</span><span class="dropdown-shortcut">Ctrl+O</span></div>
+                        <div class="dropdown-item" onclick="copyShareUrl()"><span>👥 Share</span></div>
+                        <div class="dropdown-item"><span>💾 Download</span></div>
+                        <div class="dropdown-item"><span>🗑️ Move to trash</span></div>
+                    </div>
+                </div>
+                <div class="menu-item">Edit
+                    <div class="dropdown-content">
+                        <div class="dropdown-item"><span>↩ Undo</span><span class="dropdown-shortcut">Ctrl+Z</span></div>
+                        <div class="dropdown-item"><span>↪ Redo</span><span class="dropdown-shortcut">Ctrl+Y</span></div>
+                        <div class="dropdown-item"><span>✂ Cut</span><span class="dropdown-shortcut">Ctrl+X</span></div>
+                        <div class="dropdown-item"><span>📋 Copy</span><span class="dropdown-shortcut">Ctrl+C</span></div>
+                        <div class="dropdown-item"><span>📌 Paste</span><span class="dropdown-shortcut">Ctrl+V</span></div>
+                    </div>
+                </div>
+                <div class="menu-item">View
+                    <div class="dropdown-content">
+                        <div class="dropdown-item"><span>📏 Show ruler</span></div>
+                        <div class="dropdown-item"><span>📑 Show outline</span></div>
+                        <div class="dropdown-item"><span>🔲 Full screen</span></div>
+                    </div>
+                </div>
+                <div class="menu-item">Insert
+                    <div class="dropdown-content">
+                        <div class="dropdown-item"><span>🖼️ Image</span></div>
+                        <div class="dropdown-item"><span>📊 Chart</span></div>
+                        <div class="dropdown-item"><span>🔗 Link</span></div>
+                        <div class="dropdown-item"><span>🏷️ Special characters</span></div>
+                    </div>
+                </div>
+                <div class="menu-item">Format
+                    <div class="dropdown-content">
+                        <div class="dropdown-item"><span><b>B</b> Bold</span><span class="dropdown-shortcut">Ctrl+B</span></div>
+                        <div class="dropdown-item"><span><i>I</i> Italic</span><span class="dropdown-shortcut">Ctrl+I</span></div>
+                        <div class="dropdown-item"><span><u>U</u> Underline</span><span class="dropdown-shortcut">Ctrl+U</span></div>
+                        <div class="dropdown-item"><span>↔ Alignment</span></div>
+                    </div>
+                </div>
+                <div class="menu-item">Tools
+                    <div class="dropdown-content">
+                        <div class="dropdown-item" onclick="toggleRadio()"><span>📻 Radio Player</span> <span class="dropdown-shortcut">Alt+R</span></div>
+                        <div class="dropdown-item"><span>📖 Spelling & Grammar</span></div>
+                        <div class="dropdown-item" onclick="updateStats()"><span>📊 Word Count</span></div>
+                    </div>
+                </div>
                 <div class="menu-item">Extensions</div>
                 <div class="menu-item">Help</div>
             </div>
         </div>
         <div style="flex-grow: 1;"></div>
-        
-        <div class="tool-icon" style="margin-right: 16px;" title="Open comment history">💬</div>
-        
-        <div class="account-circle">M</div>
-        <div class="share-btn">Share</div>
+        <div class="share-btn" onclick="copyShareUrl()">Share</div>
     </div>
     
     <div id="toolbar">
-        <div class="tool-icon">↩</div>
-        <div class="tool-icon">↪</div>
-        <div class="tool-icon">🖨️</div>
-        <div class="tool-icon">✓</div>
+        <div class="tool-icon" title="Undo">↩</div>
+        <div class="tool-icon" title="Redo">↪</div>
+        <div class="tool-icon" title="Print">🖨️</div>
+        <div class="tool-icon" title="Spellcheck">✓</div>
         <div class="tool-separator"></div>
         <div class="tool-icon" style="width: auto; padding: 0 4px; font-size: 14px;">100% ▼</div>
         <div class="tool-separator"></div>
         <div class="tool-icon" style="width: auto; padding: 0 4px; font-size: 14px;">Normal text ▼</div>
         <div class="tool-separator"></div>
-        <div class="tool-icon" style="width: auto; padding: 0 4px; font-family: 'Roboto'; font-size: 14px;">Roboto ▼</div>
+        <div class="tool-icon" style="width: auto; padding: 0 4px;">
+            <select class="font-select" onchange="changeFont(this.value)">
+                <option value="Roboto">Roboto</option>
+                <option value="'Google Sans'">Google Sans</option>
+                <option value="'EB Garamond'">EB Garamond</option>
+                <option value="'Courier Prime'">Courier Prime</option>
+                <option value="'Lexend'">Lexend</option>
+            </select>
+        </div>
         <div class="tool-separator"></div>
-        <div class="tool-icon"><b>B</b></div>
-        <div class="tool-icon"><i>I</i></div>
-        <div class="tool-icon"><u>U</u></div>
+        <div class="tool-icon" onclick="execCmd('bold')"><b>B</b></div>
+        <div class="tool-icon" onclick="execCmd('italic')"><i>I</i></div>
+        <div class="tool-icon" onclick="execCmd('underline')"><u>U</u></div>
         <div class="tool-icon" style="color: black;">A</div>
         <div class="tool-separator"></div>
         <div class="tool-icon">🔗</div>
         <div class="tool-separator"></div>
-        <div class="tool-icon" style="width: auto; padding: 0 4px; font-size: 12px; color: #5f6368; cursor: default;">v3.1.8</div>
+        <div class="tool-icon" style="width: auto; padding: 0 4px; font-size: 12px; color: #5f6368; cursor: default;" title="System Version">v3.1.8</div>
+    </div>
+
+    <div id="hint-banner">
+        💡 <b>Hint:</b> Goto <b>Tools</b> to use the Radio Player or press <b>Alt + R</b>! 🎵
     </div>
 
     <div id="main-area">
-        <div id="document-page" contenteditable="false">
+        <div id="document-page" contenteditable="true">
             <h1>Project: Maxbarkerbumsex</h1>
-            
-            <p style="color: #666;">Last edit was seconds ago</p>
-            
+            <p style="color: #666; font-size: 14px;" id="last-edit">Last edit was seconds ago</p>
             <hr style="border: 0; border-top: 1px solid #ccc; margin: 20px 0;">
             
             <h2>Game Directory</h2>
-            
-            <p>This document contains the official listing of interactive projects hosted on this domain. Select a link below to launch the respective application.</p>
-            
-            <p><strong>Available Projects:</strong></p>
-            
-            <ul>
-                <li style="margin-bottom: 20px;">
-                    <a href="platformer.html" class="game-link" style="font-size: 18px;">Infinite Random Obby</a><br>
-                    <span style="color: #333; font-size: 14px;">
-                        A procedurally generated 3D platformer featuring infinite levels.
-                    </span><br>
-                    <span style="color: #5f6368; font-size: 13px; font-style: italic;">
-                        Status: Active | Controls: WASD + Space
-                    </span>
-                </li>
-                
-                <li style="margin-bottom: 20px;">
-                    <a href="shooter.html" class="game-link" style="font-size: 18px;">Wave Survival FPS</a><br>
-                    <span style="color: #333; font-size: 14px;">
-                        A fast-paced wave survival shooter. Start with your fists, unlock weapons, and survive to 100 kills.
-                    </span><br>
-                    <span style="color: #5f6368; font-size: 13px; font-style: italic;">
-                        Status: Active | Controls: WASD + Space + Click + 1/2/3
-                    </span>
-                </li>
-                
-                <li style="margin-bottom: 20px;">
-                    <a href="tunnelrush.html" class="game-link" style="font-size: 18px;">Tunnel Rush</a><br>
-                    <span style="color: #333; font-size: 14px;">
-                        A fast-paced reflex game where you navigate through a twisting 3D tunnel, dodging obstacles at high speeds.
-                    </span><br>
-                    <span style="color: #5f6368; font-size: 13px; font-style: italic;">
-                        Status: Active | Controls: Left/Right Arrows or A/D
-                    </span>
-                </li>
-                
-                <li>
-                    <span style="color: #999;">[ Placeholder for Game 4 ]</span><br>
-                    <span style="color: #ccc; font-size: 13px;">Coming soon...</span>
-                </li>
-            </ul>
+            <p>This document contains the official listing of interactive projects hosted on this domain. Select an entry below to launch the respective application.</p>
 
-            <br><br>
-            <p><em>Note: Ensure audio is enabled for the best experience. If games fail to load, please check your browser security settings regarding WebGL and pointer lock.</em></p>
-            
-            <p>End of document.<span class="cursor"></span></p>
+            <!-- 1. Tunnel Rush -->
+            <a href="tunnelrush.html" class="game-card">
+                <div>
+                    <h3>1. Tunnel Rush / Void Rush</h3>
+                    <p>Navigate a high-speed neon tunnel, dodging shifting geometric obstacles.</p>
+                    <span>Status: Active | Controls: A/D or Left/Right</span>
+                </div>
+                <div style="font-weight:bold; color:var(--docs-blue)">OPEN FILE</div>
+            </a>
+
+            <!-- 2. Shooter -->
+            <a href="shooter.html" class="game-card">
+                <div>
+                    <h3>2. Wave Survival FPS</h3>
+                    <p>Combat-ready wave survival simulator. Deploy your arsenal and survive the onslaught.</p>
+                    <span>Status: Active | Controls: WASD + Click</span>
+                </div>
+                <div style="font-weight:bold; color:var(--docs-blue)">OPEN FILE</div>
+            </a>
+
+            <!-- 3. Obby -->
+            <a href="platformer.html" class="game-card">
+                <div>
+                    <h3>3. Infinite Random Obby</h3>
+                    <p>Procedurally generated 3D platformer featuring endless ascending levels.</p>
+                    <span>Status: Active | Controls: WASD + Space</span>
+                </div>
+                <div style="font-weight:bold; color:var(--docs-blue)">OPEN FILE</div>
+            </a>
+
+            <p style="margin-top: 40px;">End of document.<span class="cursor"></span></p>
         </div>
     </div>
 
+    <div id="status-bar">
+        <span id="page-count">Page 1 of 1</span>
+        <span id="word-count">0 words</span>
+        <span>Spelling & Grammar: ✓</span>
+    </div>
+
+    <!-- Radio Player Modal -->
+    <div id="radio-modal">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom: 1px solid #eee; padding-bottom: 8px;">
+            <b style="font-size: 15px;">DocRadio v2.0</b>
+            <span style="cursor:pointer; font-size: 18px;" onclick="toggleRadio()">✕</span>
+        </div>
+        <div class="disk-box" id="disk">
+            <div class="disk-center">MAX<br>BARKER</div>
+        </div>
+        <div style="text-align:center; margin-bottom: 15px;">
+            <div id="song-title" style="font-weight:500; font-size:14px; color: var(--docs-blue);">Select a Track</div>
+            <div id="song-artist" style="font-size:12px; color:#888;">Playlist Active</div>
+        </div>
+        <div class="radio-controls">
+            <div class="playback-row">
+                <div class="p-btn" onclick="prevSong()" title="Previous">⏮</div>
+                <div class="p-btn main-play" id="play-btn" onclick="togglePlay()" title="Play/Pause">▶</div>
+                <div class="p-btn" onclick="nextSong()" title="Next">⏭</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; margin: 5px 0;">
+                <span style="font-size: 14px;">🔈</span> 
+                <input type="range" style="flex-grow:1; accent-color: var(--docs-blue);" min="0" max="1" step="0.01" value="0.5" oninput="setVolume(this.value)"> 
+                <span style="font-size: 14px;">🔊</span>
+            </div>
+            <div style="font-size: 12px; display:flex; justify-content:space-between; align-items:center; padding: 0 4px;">
+                <label style="cursor:pointer; display:flex; align-items:center; gap:4px;">
+                    <input type="checkbox" id="shuffle-toggle"> Shuffle Mode
+                </label>
+                <span style="color:#666; font-weight:500;">Playlist Settings</span>
+            </div>
+            <div class="song-list-scroll" id="playlist-container"></div>
+        </div>
+    </div>
+
+    <div id="toast">Link copied to clipboard!</div>
+
+    <script>
+        // --- Songs Metadata ---
+        const playlist = [
+            { name: "music10af1.mp3", title: "AF1", artist: "Track 10" },
+            { name: "music11staywme.mp3", title: "Stay With Me", artist: "Track 11" },
+            { name: "music12moonlight.mp3", title: "Moonlight", artist: "Track 12" },
+            { name: "music132kfreestyle.mp3", title: "2K Freestyle", artist: "Track 13" },
+            { name: "music1coolforthesummer.mp3", title: "Cool For Summer", artist: "Track 1" },
+            { name: "music2mist.mp3", title: "Mist", artist: "Track 2" },
+            { name: "music3likethat.mp3", title: "Like That", artist: "Track 3" },
+            { name: "music4tellem.mp3", title: "Tell Em", artist: "Track 4" },
+            { name: "music5maskoff.mp3", title: "Mask Off", artist: "Track 5" },
+            { name: "music6timeless.mp3", title: "Timeless", artist: "Track 6" },
+            { name: "music790mh.mp3", title: "90MH", artist: "Track 7" }
+        ];
+
+        let currentSongIdx = -1;
+        let isPlaying = false;
+        const audio = new Audio();
+        
+        // --- Initialization ---
+        window.onload = () => {
+            renderPlaylist();
+            updateStats();
+            document.getElementById('document-page').addEventListener('input', updateStats);
+        };
+
+        function renderPlaylist() {
+            const container = document.getElementById('playlist-container');
+            playlist.forEach((s, i) => {
+                const div = document.createElement('div');
+                div.className = 'song-item';
+                div.innerHTML = `
+                    <input type="radio" name="song-select" id="song-${i}" onclick="loadAndPlay(${i})"> 
+                    <label for="song-${i}" style="flex-grow:1; cursor:pointer;">${s.title}</label> 
+                    <input type="checkbox" checked class="shuf-check" data-idx="${i}" title="Toggle for Shuffle">
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        // --- Radio Player Logic ---
+        function toggleRadio() {
+            const m = document.getElementById('radio-modal');
+            const isVisible = m.style.display === 'block';
+            m.style.display = isVisible ? 'none' : 'block';
+        }
+
+        function togglePlay() {
+            if (currentSongIdx === -1) return loadAndPlay(0);
+            
+            const btn = document.getElementById('play-btn');
+            const disk = document.getElementById('disk');
+
+            if (isPlaying) {
+                audio.pause();
+                btn.innerText = '▶';
+                disk.style.animationPlayState = 'paused';
+            } else {
+                audio.play().catch(e => {
+                    console.warn("Audio interaction required first.");
+                    showToast("Click track to start audio");
+                });
+                btn.innerText = '⏸';
+                disk.style.animationPlayState = 'running';
+            }
+            isPlaying = !isPlaying;
+        }
+
+        function loadAndPlay(idx) {
+            currentSongIdx = idx;
+            const s = playlist[idx];
+            audio.src = s.name;
+            document.getElementById('song-title').innerText = s.title;
+            document.getElementById('song-artist').innerText = s.artist;
+            
+            // Sync radio button
+            const radios = document.getElementsByName('song-select');
+            if (radios[idx]) radios[idx].checked = true;
+
+            isPlaying = false;
+            togglePlay();
+        }
+
+        function nextSong() {
+            let next = (currentSongIdx + 1) % playlist.length;
+            if (document.getElementById('shuffle-toggle').checked) {
+                const pool = Array.from(document.querySelectorAll('.shuf-check:checked')).map(el => parseInt(el.dataset.idx));
+                if (pool.length > 0) {
+                    next = pool[Math.floor(Math.random() * pool.length)];
+                }
+            }
+            loadAndPlay(next);
+        }
+
+        function prevSong() {
+            loadAndPlay((currentSongIdx - 1 + playlist.length) % playlist.length);
+        }
+
+        function setVolume(v) { audio.volume = v; }
+
+        // --- Document Hub UI Logic ---
+        function changeFont(f) { 
+            document.getElementById('document-page').style.fontFamily = f; 
+        }
+
+        function execCmd(c) { 
+            document.execCommand(c, false, null); 
+        }
+
+        function updateStats() {
+            const text = document.getElementById('document-page').innerText;
+            const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+            document.getElementById('word-count').innerText = `${words} words`;
+            const pages = Math.max(1, Math.ceil(document.getElementById('document-page').scrollHeight / 1056));
+            document.getElementById('page-count').innerText = `Page 1 of ${pages}`;
+        }
+
+        function copyShareUrl() {
+            const el = document.createElement('textarea');
+            el.value = window.location.href;
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+            showToast("URL copied to clipboard!");
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 2500);
+        }
+
+        // Global Keyboard Listeners
+        window.addEventListener('keydown', e => {
+            // Alt + R for Radio
+            if (e.altKey && e.key.toLowerCase() === 'r') {
+                e.preventDefault();
+                toggleRadio();
+            }
+        });
+    </script>
 </body>
 </html>
