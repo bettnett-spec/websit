@@ -829,7 +829,7 @@
             shoot(weapon);
             lastShootTime = now;
             if (weapon.auto && isMouseDown) {
-                setTimeout(checkShoot, weapon.fireRate);
+                setTimeout(() => checkShoot(), weapon.fireRate);
             }
         }
     }
