@@ -374,13 +374,12 @@
             playerMesh = group;
 
             const loader = new THREE.GLTFLoader();
-            loader.load('astolfo_school_uniform.glb', (gltf) => {
+            loader.load('enemy.glb', (gltf) => {
                 const model = gltf.scene;
 
                 // Scale and position adjustment to match previous player size
-                // Original was ~3 units tall
-                model.scale.set(1.5, 1.5, 1.5);
-                model.position.y = -0.5; // adjust feet
+                model.scale.set(0.04, 0.04, 0.04);
+                model.position.y = -1.2; // adjust feet
                 model.rotation.y = Math.PI; // Face away from camera by default
 
                 model.traverse(obj => {

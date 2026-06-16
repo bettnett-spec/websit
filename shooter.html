@@ -528,35 +528,57 @@
         const gltfLoader = new GLTFLoader(manager);
 
         // Map
-        gltfLoader.load(ASSETS.map, (gltf) => {
-            const model = gltf.scene;
-            scene.add(model);
-            model.updateMatrixWorld(true);
 
-            model.traverse(child => {
-                if(child.isMesh) {
-                    child.receiveShadow = true;
-                    child.castShadow = true;
-                    child.userData.isMap = true;
-                    mapMeshes.push(child);
+        // Create custom map dynamically
+        function buildProceduralMap() {
+            const mapGroup = new THREE.Group();
+            scene.add(mapGroup);
 
-                    const geometry = child.geometry.clone();
-                    geometry.applyMatrix4(child.matrixWorld);
-                    const positions = geometry.attributes.position.array;
-                    let indices;
-                    if (geometry.index) indices = geometry.index.array;
-                    else {
-                        indices = new Uint32Array(positions.length / 3);
-                        for(let i=0; i<indices.length; i++) indices[i] = i;
-                    }
+            const createMapWall = (x, y, z, w, h, d) => {
+                const geo = new THREE.BoxGeometry(w, h, d);
+                const mat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.position.set(x, y, z);
+                mesh.receiveShadow = true;
+                mesh.castShadow = true;
+                mesh.userData.isMap = true;
+                mapGroup.add(mesh);
+                mapMeshes.push(mesh);
 
-                    const shape = new CANNON.Trimesh(positions, indices);
-                    const body = new CANNON.Body({ mass: 0, material: slipperyMat });
-                    body.addShape(shape);
-                    world.addBody(body);
-                }
-            });
-        });
+                const shape = new CANNON.Box(new CANNON.Vec3(w/2, h/2, d/2));
+                const body = new CANNON.Body({ mass: 0, material: slipperyMat });
+                body.addShape(shape);
+                body.position.set(x, y, z);
+                world.addBody(body);
+
+                return { mesh, box: new THREE.Box3().setFromObject(mesh) };
+            };
+
+            // Floor is already handled by physics Plane, but visually we can add a big floor if needed,
+            // though the original map.glb had the visual floor. Let's add a visual floor.
+            const floorGeo = new THREE.BoxGeometry(200, 1, 200);
+            const floorMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+            const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+            floorMesh.position.set(0, -0.5, 0);
+            floorMesh.receiveShadow = true;
+            mapGroup.add(floorMesh);
+
+            // Bounding walls
+            createMapWall(0, 10, -50, 100, 20, 2);
+            createMapWall(0, 10, 50, 100, 20, 2);
+            createMapWall(-50, 10, 0, 2, 20, 100);
+            createMapWall(50, 10, 0, 2, 20, 100);
+
+            // Inner obstacles
+            createMapWall(-20, 5, -20, 10, 10, 10);
+            createMapWall(20, 5, 20, 10, 10, 10);
+            createMapWall(-20, 5, 20, 10, 10, 10);
+            createMapWall(20, 5, -20, 10, 10, 10);
+            createMapWall(0, 5, 0, 15, 10, 15);
+        }
+        buildProceduralMap();
+
+
 
         // Weapons
         weaponContainer = new THREE.Group();
@@ -635,69 +657,42 @@
         }
     }
 
+
     function getValidSpawnPosition() {
-        const raycaster = new THREE.Raycaster();
-        const down = new THREE.Vector3(0, -1, 0);
-        const up = new THREE.Vector3(0, 1, 0);
-        
         const playerPos = physicsBody.position;
         
         for(let i=0; i<50; i++) {
-            // Spawn in a donut shape around the player (radius 15 to 45)
+            // Spawn in a donut shape around the player (radius 15 to 40)
             const angle = Math.random() * Math.PI * 2;
-            const radius = 15 + Math.random() * 30;
-            const x = playerPos.x + Math.cos(angle) * radius;
-            const z = playerPos.z + Math.sin(angle) * radius;
+            const radius = 15 + Math.random() * 25;
+            let x = playerPos.x + Math.cos(angle) * radius;
+            let z = playerPos.z + Math.sin(angle) * radius;
             
-            raycaster.set(new THREE.Vector3(x, 100, z), down);
-            const intersects = raycaster.intersectObjects(mapMeshes, true);
+            // Keep within bounds
+            x = Math.max(-45, Math.min(45, x));
+            z = Math.max(-45, Math.min(45, z));
+
+            // Obstacle bounding boxes (approximate, to avoid spawning inside)
+            const obstacles = [
+                {x: -20, z: -20, w: 10, d: 10},
+                {x: 20, z: 20, w: 10, d: 10},
+                {x: -20, z: 20, w: 10, d: 10},
+                {x: 20, z: -20, w: 10, d: 10},
+                {x: 0, z: 0, w: 15, d: 15}
+            ];
             
-            if (intersects.length > 0) {
-                const hit = intersects[0];
-                // Must be a floor (normal pointing up)
-                if (hit.face && hit.face.normal.y > 0.5) {
-                    let finalX = hit.point.x;
-                    let finalY = hit.point.y + 1.5;
-                    let finalZ = hit.point.z;
-                    
-                    // Check headroom to avoid spawning inside cramped buildings or clipping through roofs
-                    const headroomRaycaster = new THREE.Raycaster(new THREE.Vector3(finalX, finalY, finalZ), up);
-                    const headroomHits = headroomRaycaster.intersectObjects(mapMeshes, true);
-                    if (headroomHits.length > 0 && headroomHits[0].distance < 1.5) {
-                        continue; // Not enough headroom
-                    }
-                    
-                    // Check horizontal clearance to avoid spawning inside walls
-                    const wallRaycaster = new THREE.Raycaster();
-                    const directions = [
-                        new THREE.Vector3(1,0,0), new THREE.Vector3(-1,0,0),
-                        new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,-1)
-                    ];
-                    
-                    let pushDir = new THREE.Vector3(0,0,0);
-                    let wallHitCount = 0;
-                    
-                    for (let dir of directions) {
-                        wallRaycaster.set(new THREE.Vector3(finalX, finalY - 0.5, finalZ), dir);
-                        const wallHits = wallRaycaster.intersectObjects(mapMeshes, true);
-                        if (wallHits.length > 0 && wallHits[0].distance < 1.0) {
-                            pushDir.add(dir.clone().multiplyScalar(-1));
-                            wallHitCount++;
-                        }
-                    }
-                    
-                    if (wallHitCount > 0) {
-                        if (pushDir.lengthSq() > 0) {
-                            pushDir.normalize().multiplyScalar(1.5); // Push away
-                            finalX += pushDir.x;
-                            finalZ += pushDir.z;
-                        } else {
-                            continue; // Trapped on multiple sides, try another spot
-                        }
-                    }
-                    
-                    return new CANNON.Vec3(finalX, finalY, finalZ);
+            let valid = true;
+            for (let obs of obstacles) {
+                // Add 2 units of clearance
+                if (x > obs.x - obs.w/2 - 2 && x < obs.x + obs.w/2 + 2 &&
+                    z > obs.z - obs.d/2 - 2 && z < obs.z + obs.d/2 + 2) {
+                    valid = false;
+                    break;
                 }
+            }
+
+            if (valid) {
+                return new CANNON.Vec3(x, 1.5, z);
             }
         }
         
