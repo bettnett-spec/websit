@@ -99,6 +99,8 @@
 
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
 
     <script>
         // --- Game Constants ---
@@ -364,118 +366,66 @@
 
 
         // --- Player Creation (Original Blocky) ---
+
         function createPlayer() {
             const group = new THREE.Group();
-            
-            // Materials (Classic Noob)
-            const matHead = new THREE.MeshLambertMaterial({ color: 0xFFFF00 }); // Yellow
-            const matTorso = new THREE.MeshLambertMaterial({ color: 0x0000FF }); // Blue
-            const matPants = new THREE.MeshLambertMaterial({ color: 0x00FF00 }); // Green
-            const matSkin = matHead; // Re-use
-
-
-            // 1. Torso (Simple Box)
-            const torso = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.5), matTorso);
-            torso.position.y = 1;
-            group.add(torso);
-
-
-            // 2. Head (Simple Box)
-            const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matHead);
-            head.position.y = 1.8;
-            group.add(head);
-
-
-            // 3. Left Leg
-            const legGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
-            legGeo.translate(0, -0.5, 0); // Pivot at Hip
-            const legL = new THREE.Mesh(legGeo, matPants);
-            legL.position.set(-0.25, 0.5, 0); 
-            group.add(legL);
-
-
-            // 4. Right Leg
-            const legR = new THREE.Mesh(legGeo, matPants);
-            legR.position.set(0.25, 0.5, 0); 
-            group.add(legR);
-
-
-            // 5. Left Arm
-            const armGeo = new THREE.BoxGeometry(0.4, 1.0, 0.4);
-            armGeo.translate(0, -0.5, 0); // Pivot at Shoulder
-            const armL = new THREE.Mesh(armGeo, matSkin);
-            // Positioned to prevent clipping/detachment (from previous fix)
-            armL.position.set(-0.7, 1.5, 0); 
-            armL.rotation.z = 0; 
-            group.add(armL);
-
-
-            // 6. Right Arm
-            const armR = new THREE.Mesh(armGeo, matSkin);
-            armR.position.set(0.7, 1.5, 0); 
-            armR.rotation.z = 0; 
-            group.add(armR);
-
-
             group.position.copy(spawnPoint);
-            group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
-
-
             scene.add(group);
             playerMesh = group;
-            
-            playerMesh.userData = { legL, legR, armL, armR };
-            isPlayerLoaded = true;
+
+            const loader = new THREE.GLTFLoader();
+            loader.load('astolfo_school_uniform.glb', (gltf) => {
+                const model = gltf.scene;
+
+                // Scale and position adjustment to match previous player size
+                // Original was ~3 units tall
+                model.scale.set(1.5, 1.5, 1.5);
+                model.position.y = -0.5; // adjust feet
+                model.rotation.y = Math.PI; // Face away from camera by default
+
+                model.traverse(obj => {
+                    if (obj.isMesh) {
+                        obj.castShadow = true;
+                        obj.receiveShadow = true;
+                    }
+                });
+
+                group.add(model);
+                group.userData.model = model;
+                isPlayerLoaded = true;
+            });
         }
+
 
 
         // --- Game Logic and Animation ---
 
-        function updateAnimation(time) {
-            if (!playerMesh || !playerMesh.userData) return;
-            const limbs = playerMesh.userData;
 
-            // Reset rotations (A clean starting state for all limbs)
-            limbs.legL.rotation.set(0,0,0);
-            limbs.legR.rotation.set(0,0,0);
-            limbs.armL.rotation.set(0,0,0);
-            limbs.armR.rotation.set(0,0,0);
+        function updateAnimation(time) {
+            if (!playerMesh || !playerMesh.userData || !playerMesh.userData.model) return;
+            const model = playerMesh.userData.model;
 
             if (isClimbing) {
-                 limbs.armL.rotation.x = -Math.PI; 
-                 limbs.armR.rotation.x = -Math.PI; 
-                 
-                 if (climbPhase === 1 && climbTimer > 0.1) {
-                     limbs.armL.rotation.x = -Math.PI / 2;
-                     limbs.armR.rotation.x = -Math.PI / 2;
-                 }
-                 limbs.legL.rotation.x = -0.2; 
-                 limbs.legR.rotation.x = -0.3;
-                 
+                 model.rotation.x = -0.2;
             } else if (!isGrounded && airTime > 0.15) {
-                // JUMP ANIMATION: Arms and legs spread wide when airborne
-                
-                // Legs
-                limbs.legL.rotation.z = -0.4;  // OUTWARDS LEFT
-                limbs.legR.rotation.z = 0.4; // OUTWARDS RIGHT
-
-
-                // Arms 
-                limbs.armL.rotation.z = -0.8; // OUTWARDS LEFT 
-                limbs.armR.rotation.z = 0.8;  // OUTWARDS RIGHT
-                
+                // JUMP ANIMATION: Slight tilt when airborne
+                model.rotation.x = 0.2;
             } else if (moveForward || moveBackward || moveLeft || moveRight) {
-                // WALKING / RUNNING ANIMATION: Arm/Leg X-axis swing
-                const speed = isShiftPressed ? 5 : 10;
-                const angle = Math.sin(time * speed) * 0.8;
-                limbs.legL.rotation.x = -angle;
-                limbs.legR.rotation.x = angle;
-                limbs.armL.rotation.x = angle;
-                limbs.armR.rotation.x = -angle;
+                // WALKING / RUNNING ANIMATION: Bobbing
+                const speed = isShiftPressed ? 10 : 15;
+                const bob = Math.abs(Math.sin(time * speed)) * 0.2;
+                const tilt = Math.sin(time * speed * 0.5) * 0.1;
+                model.position.y = -0.5 + bob;
+                model.rotation.z = tilt;
+                model.rotation.x = 0;
             } else {
-                // STANDING / IDLE: Arms straight down, no animation.
+                // STANDING / IDLE
+                model.position.y = -0.5;
+                model.rotation.z = 0;
+                model.rotation.x = 0;
             }
         }
+
 
 
         // --- Input Handling ---
