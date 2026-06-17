@@ -67,6 +67,33 @@
             pointer-events: none;
             z-index: 1000; 
         }
+
+        #radio-container {
+            position: absolute; bottom: 20px; right: 20px;
+            border-right: 4px solid #aa00ff;
+            background: linear-gradient(135deg, rgba(0,0,0,0.8), rgba(20,20,20,0.6));
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            padding: 15px 20px; border-radius: 8px 0 0 8px;
+            text-align: right; pointer-events: auto;
+            z-index: 1002;
+        }
+        #radio-title {
+            font-size: 14px; font-weight: bold; margin-bottom: 10px;
+            color: #aa00ff; max-width: 250px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        #radio-controls button {
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+            color: white; font-size: 16px; cursor: pointer; margin-left: 8px;
+            border-radius: 4px; padding: 5px 12px; transition: all 0.2s;
+        }
+        #radio-controls button:hover {
+            background: rgba(170,0,255,0.5); border-color: #aa00ff;
+        }
     </style>
 </head>
 <body>
@@ -75,6 +102,15 @@
     <div id="info">Stage: <span id="stage-display">1</span></div>
     <div id="checkpoint-msg">CHECKPOINT! NEXT LEVEL GENERATED</div>
     <div id="crosshair"></div>
+
+    <div id="radio-container">
+        <div id="radio-title">RADIO: OFF</div>
+        <div id="radio-controls">
+            <button id="radio-prev">⏮</button>
+            <button id="radio-play">▶</button>
+            <button id="radio-next">⏭</button>
+        </div>
+    </div>
 
     <div id="blocker">
         <div id="instructions">
@@ -167,6 +203,62 @@
         const sfxWalk = document.getElementById('sfx-walk');
         
         if(sfxWalk) sfxWalk.volume = 0.4; 
+
+        // Radio System
+        const radioTracks = [
+            '/music1coolforthesummer.mp3',
+            '/music2mist.mp3',
+            '/music3likethat.mp3',
+            '/music4tellem.mp3',
+            '/music5maskoff.mp3',
+            '/music6timeless.mp3',
+            '/music790mh.mp3',
+            '/music8sky.mp3',
+            '/music10af1.mp3',
+            '/music11staywme.mp3',
+            '/music12moonlight.mp3',
+            '/music132kfreestyle.mp3'
+        ];
+        let currentTrackIdx = 0;
+        const radioAudio = new Audio();
+        radioAudio.volume = 0.2;
+        radioAudio.addEventListener('ended', nextTrack);
+
+        function playTrack(idx) {
+            currentTrackIdx = idx;
+            radioAudio.src = radioTracks[currentTrackIdx];
+            radioAudio.play().catch(e => console.log("Audio play prevented"));
+            const trackName = radioTracks[currentTrackIdx].replace('/', '').replace('.mp3', '').replace('music', '').replace(/[0-9]+/, '');
+            document.getElementById('radio-title').innerText = '🎵 ' + trackName;
+            document.getElementById('radio-play').innerText = '⏸';
+        }
+
+        function nextTrack() {
+            currentTrackIdx = (currentTrackIdx + 1) % radioTracks.length;
+            playTrack(currentTrackIdx);
+        }
+
+        function prevTrack() {
+            currentTrackIdx = (currentTrackIdx - 1 + radioTracks.length) % radioTracks.length;
+            playTrack(currentTrackIdx);
+        }
+
+        function toggleRadio() {
+            if (radioAudio.paused) {
+                if (!radioAudio.src) playTrack(currentTrackIdx);
+                else {
+                    radioAudio.play();
+                    document.getElementById('radio-play').innerText = '⏸';
+                }
+            } else {
+                radioAudio.pause();
+                document.getElementById('radio-play').innerText = '▶';
+            }
+        }
+
+        document.getElementById('radio-play').addEventListener('click', (e) => { e.stopPropagation(); toggleRadio(); });
+        document.getElementById('radio-next').addEventListener('click', (e) => { e.stopPropagation(); nextTrack(); });
+        document.getElementById('radio-prev').addEventListener('click', (e) => { e.stopPropagation(); prevTrack(); });
 
 
         init();
