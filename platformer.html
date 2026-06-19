@@ -133,12 +133,22 @@
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
 
 
-    <!-- Three.js from CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <!-- Import Maps for Modules -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+        "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
+      }
+    }
+    </script>
 
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import * as CANNON from 'cannon-es';
 
-    <script>
         // --- Game Constants ---
         const PLAYER_HEIGHT = 1.6; 
         const PLAYER_SPEED_RUN = 0.22; 
@@ -175,6 +185,12 @@
         let nextStageStart = new THREE.Vector3(0, 0, 0); 
         let stageDirection = new THREE.Vector3(0, 0, -1); 
         
+        // Physics World
+        let world;
+        let physicsBody;
+        let slipperyMat;
+        let physicsContact;
+
         // Input State
         let moveForward = false;
         let moveBackward = false;
@@ -273,9 +289,18 @@
             mesh.receiveShadow = true;
             scene.add(mesh);
 
+            let body = null;
+            if (type !== 'lava' && type !== 'checkpoint') {
+                const shape = new CANNON.Box(new CANNON.Vec3(w / 2, h / 2, d / 2));
+                body = new CANNON.Body({ mass: 0, material: slipperyMat });
+                body.addShape(shape);
+                body.position.set(x, y, z);
+                world.addBody(body);
+            }
 
             const platformData = {
                 mesh: mesh,
+                body: body,
                 box: new THREE.Box3().setFromObject(mesh), 
                 width: w,
                 height: h,
@@ -394,6 +419,18 @@
         function init() {
             clock = new THREE.Clock();
 
+            // 1. Physics Setup
+            world = new CANNON.World();
+            world.gravity.set(0, -20, 0);
+            world.solver.iterations = 20;
+
+            slipperyMat = new CANNON.Material('slippery');
+            physicsContact = new CANNON.ContactMaterial(slipperyMat, slipperyMat, {
+                friction: 0.0,
+                restitution: 0.0
+            });
+            world.addContactMaterial(physicsContact);
+
             // 1. Scene Setup
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87CEEB); 
@@ -465,7 +502,20 @@
             scene.add(group);
             playerMesh = group;
 
-            const loader = new THREE.GLTFLoader();
+            // Physics Body
+            const playerRadius = 0.4;
+            const shape = new CANNON.Sphere(playerRadius);
+            physicsBody = new CANNON.Body({
+                mass: 5,
+                material: slipperyMat,
+                position: new CANNON.Vec3(spawnPoint.x, spawnPoint.y, spawnPoint.z),
+                fixedRotation: true,
+                linearDamping: 0.9
+            });
+            physicsBody.addShape(shape);
+            world.addBody(physicsBody);
+
+            const loader = new GLTFLoader();
             loader.load('astolfo_school_uniform.glb', (gltf) => {
                 const model = gltf.scene;
 
@@ -581,10 +631,12 @@
 
         // --- Physics Loop ---
         function respawn(type) {
+            physicsBody.position.set(spawnPoint.x, spawnPoint.y, spawnPoint.z);
+            physicsBody.velocity.set(0, 0, 0);
+
             playerMesh.position.copy(spawnPoint);
             playerVelocity.set(0, 0, 0);
             momentum.set(0, 0, 0);
-            if (playerMesh.position.y < -30) playerVelocity.set(0,0,0);
             
             // SFX
             if (type === 'fire') {
@@ -653,133 +705,64 @@
             playerMesh.position.copy(climbStartPos);
         }
 
-        function checkPhysics(dt) {
-            // Climbing Physics
-            if (isClimbing) {
-                if (climbPhase === 0) {
-                    playerMesh.position.copy(climbStartPos); 
-                    
-                    if (isSpacePressed) {
-                        isClimbing = false;
-                        isGrounded = false;
-                        airTime = 0.2; 
-                        playerVelocity.y = JUMP_FORCE * 1.1; 
-                        
-                        const normalAngle = Math.atan2(climbNormal.x, climbNormal.z);
-                        const camAngle = Math.atan2(-Math.sin(euler.y), -Math.cos(euler.y));
-                        
-                        let diff = camAngle - normalAngle;
-                        while (diff > Math.PI) diff -= Math.PI * 2;
-                        while (diff < -Math.PI) diff += Math.PI * 2;
-                        
-                        const limit = Math.PI / 6;
-                        diff = Math.max(-limit, Math.min(limit, diff));
-                        
-                        const finalAngle = normalAngle + diff;
-                        
-                        momentum.set(Math.sin(finalAngle), 0, Math.cos(finalAngle)).multiplyScalar(0.5); 
-                        
-                        if(sfxJump) { sfxJump.currentTime=0; sfxJump.play().catch(e => {}); }
-
-                        return;
-                    }
-                    
-                    if (!isShiftPressed) {
-                        climbPhase = 1; 
-                        climbTimer = 0;
-                    }
-                } 
-                else {
-                    climbTimer += dt;
-                    if (climbTimer < 0.4) { 
-                        const t = climbTimer / 0.4;
-                        playerMesh.position.lerpVectors(climbStartPos, climbTargetPos, t);
-                    } else {
-                        playerMesh.position.copy(climbTargetPos);
-                        isClimbing = false;
-                        isGrounded = true;
-                    }
-                }
-                return;
-            }
-
+        function checkInteractions() {
+            const nextX = physicsBody.position.x;
+            const nextZ = physicsBody.position.z;
+            const feetY = physicsBody.position.y - 0.5;
+            const headY = physicsBody.position.y + 1.0;
             const playerRadius = 0.4;
+
             let onGround = false;
-            let hitLedge = false;
-            let ledgePlatform = null; 
 
-            const nextX = playerMesh.position.x; 
-            const nextZ = playerMesh.position.z;
-            const feetY = playerMesh.position.y - 0.5;
-            const headY = playerMesh.position.y + 1.0;
+            // Ground detection via raycast
+            const from = new CANNON.Vec3(physicsBody.position.x, physicsBody.position.y, physicsBody.position.z);
+            const to = new CANNON.Vec3(physicsBody.position.x, physicsBody.position.y - playerRadius - 0.1, physicsBody.position.z);
+            const result = new CANNON.RaycastResult();
 
-            for (let p of platforms) {
-                if (Math.abs(p.mesh.position.z - nextZ) > 10 && Math.abs(p.mesh.position.x - nextX) > 10) continue;
+            world.raycastClosest(from, to, {}, result);
+            if (result.hasHit && result.hitNormalWorld.y > 0.5) {
+                onGround = true;
 
-                const pPos = p.mesh.position;
-                const halfW = p.width / 2;
-                const halfD = p.depth / 2;
-                const halfH = p.height / 2;
-
-                const minX = pPos.x - halfW - playerRadius;
-                const maxX = pPos.x + halfW + playerRadius;
-                const minZ = pPos.z - halfD - playerRadius;
-                const maxZ = pPos.z + halfD + playerRadius;
-                const minY = pPos.y - halfH;
-                const maxY = pPos.y + halfH;
-
-                if (nextX > minX && nextX < maxX && nextZ > minZ && nextZ < maxZ) {
-                    if (feetY < maxY && headY > minY) {
-                        const depthIntoTop = (maxY) - feetY;
-                        
-                        if (depthIntoTop > 0 && depthIntoTop < 0.6 && playerVelocity.y <= 0.1) {
-                            onGround = true;
-                            playerMesh.position.y = maxY + 0.5;
-                            playerVelocity.y = 0;
-                            momentum.set(0,0,0); 
-                            
+                // Need to find the platform corresponding to the body
+                const hitBody = result.body;
+                if (hitBody) {
+                    for (let p of platforms) {
+                        if (p.body === hitBody) {
                             if(p.type === 'lava') { respawn('fire'); return; }
                             if(p.type === 'checkpoint') triggerCheckpoint(p);
-                        } 
-                        else if (feetY < maxY - 0.1) {
-                            if (feetY > maxY - 1.5 && feetY < maxY - 0.5 && p.type !== 'lava' && playerVelocity.y < 0) {
-                                hitLedge = true;
-                                ledgePlatform = p;
-                            } else {
-                                const dx1 = nextX - minX;
-                                const dx2 = maxX - nextX;
-                                const dz1 = nextZ - minZ;
-                                const dz2 = maxZ - nextZ;
-                                const minOverlap = Math.min(dx1, dx2, dz1, dz2);
-                                
-                                if (minOverlap === dx1) { playerMesh.position.x = minX; momentum.x = 0; }
-                                else if (minOverlap === dx2) { playerMesh.position.x = maxX; momentum.x = 0; }
-                                else if (minOverlap === dz1) { playerMesh.position.z = minZ; momentum.z = 0; }
-                                else if (minOverlap === dz2) { playerMesh.position.z = maxZ; momentum.z = 0; }
-                            }
                         }
                     }
                 }
-                else if (isShiftPressed && p.type !== 'lava') {
-                    const grabDist = 0.5;
-                    if (nextX > minX - grabDist && nextX < maxX + grabDist && 
-                        nextZ > minZ - grabDist && nextZ < maxZ + grabDist) {
-                        if (feetY > maxY - 1.2 && feetY < maxY - 0.2) {
-                            hitLedge = true;
-                            ledgePlatform = p;
-                        }
+            }
+
+            // Climbing logic via raycasts in 4 directions
+            isClimbing = false;
+            if (isShiftPressed && !onGround) {
+                const dirs = [
+                    new CANNON.Vec3(1, 0, 0),
+                    new CANNON.Vec3(-1, 0, 0),
+                    new CANNON.Vec3(0, 0, 1),
+                    new CANNON.Vec3(0, 0, -1)
+                ];
+
+                for (let dir of dirs) {
+                    const rDir = new CANNON.Vec3(physicsBody.position.x + dir.x * (playerRadius + 0.2), physicsBody.position.y, physicsBody.position.z + dir.z * (playerRadius + 0.2));
+                    world.raycastClosest(from, rDir, {}, result);
+                    if (result.hasHit && Math.abs(result.hitNormalWorld.y) < 0.1) {
+                        isClimbing = true;
+                        climbNormal.copy(result.hitNormalWorld);
+
+                        // Stop falling
+                        physicsBody.velocity.y = 0;
+                        physicsBody.velocity.x = 0;
+                        physicsBody.velocity.z = 0;
+                        break;
                     }
                 }
             }
 
             isGrounded = onGround;
-
-            if (!isGrounded && hitLedge && ledgePlatform && airTime > 0.1) {
-                const topY = ledgePlatform.mesh.position.y + ledgePlatform.height/2;
-                startClimb(ledgePlatform, ledgePlatform.width/2, ledgePlatform.depth/2, playerRadius, topY);
-            }
-
-            if (playerMesh.position.y < -30) respawn('fall');
+            if (physicsBody.position.y < -30) respawn('fall');
         }
 
         function triggerCheckpoint(p) {
@@ -809,7 +792,6 @@
 
             // Check if player is loaded
             if (!isLocked && isPlayerLoaded) {
-                 // Still need to render even if not locked, to show the blocker/instructions
                  renderer.render(scene, camera);
             }
 
@@ -817,84 +799,88 @@
                  return;
             }
 
-            if (!isClimbing) {
-                playerMesh.rotation.y = euler.y + Math.PI;
-            } else if (isClimbing && climbPhase === 0) {
-                playerMesh.rotation.y = Math.atan2(climbNormal.x, climbNormal.z) + Math.PI;
-            }
+            world.step(1 / 60, dt, 3);
 
+            playerMesh.position.copy(physicsBody.position);
+            playerMesh.rotation.y = euler.y + Math.PI;
 
-            if (!isGrounded && !isClimbing) {
+            if (!isGrounded) {
                 airTime += dt;
             } else {
                 airTime = 0;
             }
 
+            if (isClimbing) {
+                playerMesh.rotation.y = Math.atan2(climbNormal.x, climbNormal.z) + Math.PI;
+                if (isSpacePressed) {
+                    // Wall jump
+                    const normalAngle = Math.atan2(climbNormal.x, climbNormal.z);
+                    const camAngle = Math.atan2(-Math.sin(euler.y), -Math.cos(euler.y));
 
-            if (!isGrounded && !isClimbing) {
-                playerVelocity.y -= GRAVITY * timeScale;
-            }
+                    let diff = camAngle - normalAngle;
+                    while (diff > Math.PI) diff -= Math.PI * 2;
+                    while (diff < -Math.PI) diff += Math.PI * 2;
 
+                    const limit = Math.PI / 6;
+                    diff = Math.max(-limit, Math.min(limit, diff));
 
-            if (isGrounded && isSpacePressed) {
-                playerVelocity.y = JUMP_FORCE;
-                isGrounded = false;
-                if(sfxJump) { sfxJump.currentTime=0; sfxJump.play().catch(e => {}); }
-            }
+                    const finalAngle = normalAngle + diff;
 
+                    physicsBody.velocity.y = 12;
+                    physicsBody.velocity.x = Math.sin(finalAngle) * 8;
+                    physicsBody.velocity.z = Math.cos(finalAngle) * 8;
 
-            let currentSpeed = 0;
-            if (!isClimbing) {
-                currentSpeed = isShiftPressed ? PLAYER_SPEED_WALK : PLAYER_SPEED_RUN;
-            }
-            
-            const yaw = euler.y;
-            const fwdX = -Math.sin(yaw);
-            const fwdZ = -Math.cos(yaw);
-            const rightX = Math.cos(yaw);
-            const rightZ = -Math.sin(yaw);
+                    isClimbing = false;
+                    isGrounded = false;
+                    if(sfxJump) { sfxJump.currentTime=0; sfxJump.play().catch(e => {}); }
+                }
+            } else {
+                if (isGrounded && isSpacePressed && Math.abs(physicsBody.velocity.y) < 0.5) {
+                    physicsBody.velocity.y = 10;
+                    isGrounded = false;
+                    if(sfxJump) { sfxJump.currentTime=0; sfxJump.play().catch(e => {}); }
+                }
 
+                let currentSpeed = isShiftPressed ? 3 : 8;
 
-            let moveX = 0;
-            let moveZ = 0;
+                const yaw = euler.y;
+                const fwdX = -Math.sin(yaw);
+                const fwdZ = -Math.cos(yaw);
+                const rightX = Math.cos(yaw);
+                const rightZ = -Math.sin(yaw);
 
+                let moveX = 0;
+                let moveZ = 0;
 
-            if (!isClimbing) {
                 if (moveForward) { moveX += fwdX; moveZ += fwdZ; }
                 if (moveBackward) { moveX -= fwdX; moveZ -= fwdZ; }
                 if (moveLeft) { moveX -= rightX; moveZ -= rightZ; }
                 if (moveRight) { moveX += rightX; moveZ += rightZ; }
-            }
 
+                if (moveX !== 0 || moveZ !== 0) {
+                    const len = Math.sqrt(moveX*moveX + moveZ*moveZ);
+                    moveX = (moveX / len) * currentSpeed;
+                    moveZ = (moveZ / len) * currentSpeed;
 
-            if (moveX !== 0 || moveZ !== 0) {
-                const len = Math.sqrt(moveX*moveX + moveZ*moveZ);
-                moveX = (moveX / len) * currentSpeed * timeScale;
-                moveZ = (moveZ / len) * currentSpeed * timeScale;
-                
-                playerMesh.position.x += moveX;
-                playerMesh.position.z += moveZ;
-                
-                if(isGrounded && sfxWalk) {
-                    if(sfxWalk.paused) sfxWalk.play().catch(e => {});
+                    // Only modify horizontal velocity if moving, so player can be pushed by physics
+                    physicsBody.velocity.x = moveX;
+                    physicsBody.velocity.z = moveZ;
+
+                    if(isGrounded && sfxWalk) {
+                        if(sfxWalk.paused) sfxWalk.play().catch(e => {});
+                    }
+                } else {
+                    // Decelerate smoothly
+                    physicsBody.velocity.x *= 0.5;
+                    physicsBody.velocity.z *= 0.5;
+                    if(sfxWalk && !sfxWalk.paused) sfxWalk.pause();
                 }
-            } else {
-                if(sfxWalk && !sfxWalk.paused) sfxWalk.pause();
             }
             
             if(!isGrounded && sfxWalk) sfxWalk.pause();
 
-
-            playerMesh.position.add(momentum);
-            momentum.multiplyScalar(0.94); 
-
-
-            if (!isClimbing) playerMesh.position.y += playerVelocity.y * timeScale;
-
-
-            checkPhysics(dt);
+            checkInteractions();
             updateAnimation(time);
-
 
             // Ensure camera update runs every frame during the active game loop
             updateCameraPosition();
