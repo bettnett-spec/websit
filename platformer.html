@@ -153,7 +153,8 @@
         let playerMesh; // Player Group (root of the character)
         let platforms = [];
         let clock; 
-        let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
+        let isPlayerLoaded = false;
+        let playerMixer = null; // Kept for consistency, but will be set true immediately
         
         // Physics State
         let playerVelocity = new THREE.Vector3();
@@ -484,6 +485,13 @@
 
                 group.add(model);
                 group.userData.model = model;
+
+                if(gltf.animations && gltf.animations.length > 0) {
+                    playerMixer = new THREE.AnimationMixer(model);
+                    const action = playerMixer.clipAction(gltf.animations[0]);
+                    action.play();
+                }
+
                 isPlayerLoaded = true;
             });
         }
@@ -493,7 +501,8 @@
         // --- Game Logic and Animation ---
 
 
-        function updateAnimation(time) {
+        function updateAnimation(time, dt) {
+            if (playerMixer) playerMixer.update(dt);
             if (!playerMesh || !playerMesh.userData || !playerMesh.userData.model) return;
             const model = playerMesh.userData.model;
 
@@ -893,7 +902,7 @@
 
 
             checkPhysics(dt);
-            updateAnimation(time);
+            updateAnimation(time, dt);
 
 
             // Ensure camera update runs every frame during the active game loop
