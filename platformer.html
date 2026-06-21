@@ -131,6 +131,8 @@
     <audio id="sfx-death" src="death.mp3"></audio>
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
+    <audio id="sfx-ding" src="ding.mp3"></audio>
+    <audio id="sfx-wind" src="wind.mp3" loop></audio>
 
 
     <!-- Three.js from CDN -->
@@ -153,7 +155,9 @@
         let playerMesh; // Player Group (root of the character)
         let platforms = [];
         let clock; 
-        let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
+        let isPlayerLoaded = false;
+        let enemyModel = null;
+        let enemies = [];
         
         // Physics State
         let playerVelocity = new THREE.Vector3();
@@ -201,8 +205,10 @@
         const sfxDeath = document.getElementById('sfx-death');
         const sfxFire = document.getElementById('sfx-fire');
         const sfxWalk = document.getElementById('sfx-walk');
+        const sfxWind = document.getElementById('sfx-wind');
         
         if(sfxWalk) sfxWalk.volume = 0.4; 
+        if(sfxWind) sfxWind.volume = 0.5;
 
         // Radio System
         const radioTracks = [
@@ -289,6 +295,8 @@
 
 
         function generateRandomStage() {
+            enemies.forEach(e => scene.remove(e));
+            enemies = [];
             const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
             const stageColor = colors[Math.floor(Math.random() * colors.length)];
             
@@ -321,6 +329,12 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    if (Math.random() < 0.2 && enemyModel) {
+                        const enemyClone = enemyModel.clone();
+                        enemyClone.position.set(curX, curY + 1.5, curZ);
+                        scene.add(enemyClone);
+                        enemies.push(enemyClone);
+                    }
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -431,6 +445,16 @@
             nextStageStart.set(0, 0, -5); 
             generateRandomStage();
 
+            // 6.5 Add Map Background
+            });
+
+            loader.load('map.glb', (gltf) => {
+                const mapMesh = gltf.scene;
+                mapMesh.position.set(0, -40, 0);
+                mapMesh.scale.set(5, 5, 5);
+                scene.add(mapMesh);
+            });
+
             // 7. Event Listeners
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
@@ -466,6 +490,37 @@
             playerMesh = group;
 
             const loader = new THREE.GLTFLoader();
+            loader.load("astolfo_school_uniform.glb", (gltf) => {
+                const model = gltf.scene;
+                model.scale.set(1.5, 1.5, 1.5);
+                model.position.y = -0.5;
+                model.rotation.y = Math.PI;
+                model.traverse(obj => {
+                    if (obj.isMesh) {
+                        obj.castShadow = true;
+                        obj.receiveShadow = true;
+                    }
+                });
+                group.add(model);
+                group.userData.model = model;
+                isPlayerLoaded = true;
+            });
+            loader.load("enemy.glb", (gltf) => {
+                enemyModel = gltf.scene;
+                enemyModel.scale.set(1.5, 1.5, 1.5);
+                enemyModel.traverse(obj => {
+                    if (obj.isMesh) {
+                        obj.castShadow = true;
+                        obj.receiveShadow = true;
+                    }
+                });
+            });
+            group.position.copy(spawnPoint);
+            scene.add(group);
+            playerMesh = group;
+
+            });
+
             loader.load('astolfo_school_uniform.glb', (gltf) => {
                 const model = gltf.scene;
 
@@ -559,6 +614,7 @@
                 isLocked = true;
                 blocker.style.display = 'none';
                 crosshair.style.display = 'block';
+                if(sfxWind && sfxWind.paused) sfxWind.play().catch(e => {});
             } else {
                 isLocked = false;
                 blocker.style.display = 'flex';
@@ -654,6 +710,12 @@
         }
 
         function checkPhysics(dt) {
+            for (let i = 0; i < enemies.length; i++) {
+                if (playerMesh.position.distanceTo(enemies[i].position) < 1.0) {
+                    respawn("death");
+                    return;
+                }
+            }
             // Climbing Physics
             if (isClimbing) {
                 if (climbPhase === 0) {
@@ -794,6 +856,8 @@
                 setTimeout(() => { msg.style.opacity = 0; }, 2000);
                 
                 if(sfxCheck) { sfxCheck.currentTime=0; sfxCheck.play().catch(e => {}); }
+                const sfxDing = document.getElementById("sfx-ding");
+                if(sfxDing) { sfxDing.currentTime=0; sfxDing.play().catch(e => {}); }
             } else {
                 spawnPoint.set(p.mesh.position.x, p.mesh.position.y + 0.5 + 2, p.mesh.position.z);
             }
@@ -894,6 +958,7 @@
 
             checkPhysics(dt);
             updateAnimation(time);
+            enemies.forEach(e => e.rotation.y += 0.02);
 
 
             // Ensure camera update runs every frame during the active game loop
