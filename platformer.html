@@ -131,6 +131,7 @@
     <audio id="sfx-death" src="death.mp3"></audio>
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
+    <audio id="sfx-wind" src="wind.mp3" loop></audio>
 
 
     <!-- Three.js from CDN -->
@@ -152,6 +153,8 @@
         let camera, scene, renderer;
         let playerMesh; // Player Group (root of the character)
         let platforms = [];
+        let enemies = [];
+        let enemyModelTemplate = null;
         let clock; 
         let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
         
@@ -201,8 +204,10 @@
         const sfxDeath = document.getElementById('sfx-death');
         const sfxFire = document.getElementById('sfx-fire');
         const sfxWalk = document.getElementById('sfx-walk');
+        const sfxWind = document.getElementById('sfx-wind');
         
-        if(sfxWalk) sfxWalk.volume = 0.4; 
+        if(sfxWalk) sfxWalk.volume = 0.4;
+        if(sfxWind) sfxWind.volume = 0.5;
 
         // Radio System
         const radioTracks = [
@@ -266,7 +271,12 @@
         // --- Level Generation Functions ---
         function createPlatform(x, y, z, w, h, d, color, type = 'normal') {
             const geometry = new THREE.BoxGeometry(w, h, d);
-            const material = new THREE.MeshLambertMaterial({ color: color });
+            let material;
+            if (type === 'lava') {
+                material = new THREE.MeshStandardMaterial({ color: color, roughness: 0.8, metalness: 0.2, emissive: 0xff0000, emissiveIntensity: 1.0 });
+            } else {
+                material = new THREE.MeshStandardMaterial({ color: color, roughness: 0.8, metalness: 0.2 });
+            }
             const mesh = new THREE.Mesh(geometry, material);
             mesh.position.set(x, y, z);
             mesh.castShadow = true;
@@ -321,6 +331,16 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    if (enemyModelTemplate && Math.random() > 0.5) {
+                        const enemyGroup = new THREE.Group();
+                        const mesh = enemyModelTemplate.clone();
+                        mesh.scale.set(0.1, 0.1, 0.1); // Same scale roughly as shooter.html might need tweaking but let's try 0.1
+                        mesh.position.y = 1; // On top of platform
+                        enemyGroup.add(mesh);
+                        enemyGroup.position.set(curX, curY, curZ);
+                        scene.add(enemyGroup);
+                        enemies.push({ group: enemyGroup, stage: currentStage });
+                    }
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -409,8 +429,14 @@
             document.body.appendChild(renderer.domElement);
 
             // 4. Lighting
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
             scene.add(ambientLight);
+
+            const gltfLoader = new THREE.GLTFLoader();
+            gltfLoader.load('enemy.glb', (gltf) => {
+                enemyModelTemplate = gltf.scene;
+                enemyModelTemplate.traverse(child => { if(child.isMesh) child.castShadow = true; });
+            });
             
             const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
             dirLight.position.set(50, 100, 50);
@@ -444,6 +470,7 @@
                         sfxJump.currentTime = 0;
                     }).catch(e => { /* Audio playback error handling */ });
                 }
+                if(sfxWind) sfxWind.play().catch(e => {});
                 
                 document.body.requestPointerLock();
             });
@@ -779,7 +806,24 @@
                 startClimb(ledgePlatform, ledgePlatform.width/2, ledgePlatform.depth/2, playerRadius, topY);
             }
 
+
             if (playerMesh.position.y < -30) respawn('fall');
+
+            // Enemy collision check
+            for (let i = 0; i < enemies.length; i++) {
+                const enemy = enemies[i];
+                if (Math.abs(enemy.group.position.z - playerMesh.position.z) < 10) {
+                    // Make enemies spin slightly for visual effect
+                    enemy.group.rotation.y += dt;
+
+                    const dist = playerMesh.position.distanceTo(enemy.group.position);
+                    if (dist < 1.0) {
+                        respawn('fall'); // Simulates dying to enemy, respawn triggers death sfx
+                        if (sfxDeath) { sfxDeath.currentTime = 0; sfxDeath.play().catch(e=>{}); }
+                        return; // exit early
+                    }
+                }
+            }
         }
 
         function triggerCheckpoint(p) {
