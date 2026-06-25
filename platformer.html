@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Infinite Random Obby</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; }
+        body { margin: 0; overflow: hidden; background-color: #1a1a2e; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; }
         #info {
             position: absolute;
             top: 10px;
@@ -152,7 +152,11 @@
         let camera, scene, renderer;
         let playerMesh; // Player Group (root of the character)
         let platforms = [];
-        let clock; 
+        let clock;
+        let enemies = [];
+        let enemyModel = null;
+        let enemySpawnQueue = [];
+
         let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
         
         // Physics State
@@ -288,6 +292,18 @@
         }
 
 
+
+        function spawnEnemy(x, y, z) {
+            if (!enemyModel) {
+                enemySpawnQueue.push({x: x, y: y, z: z});
+                return;
+            }
+            const enemyMesh = enemyModel.clone();
+            enemyMesh.position.set(x, y, z);
+            scene.add(enemyMesh);
+            enemies.push({ mesh: enemyMesh, startX: x, startY: y, startZ: z, phase: Math.random() * Math.PI * 2 });
+        }
+
         function generateRandomStage() {
             const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
             const stageColor = colors[Math.floor(Math.random() * colors.length)];
@@ -321,6 +337,7 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    if(Math.random() < 0.5) spawnEnemy(curX, curY + 0.5, curZ);
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -337,6 +354,7 @@
                      const len = 6 + Math.random() * 6;
                      curZ -= len/2;
                      createPlatform(curX, curY, curZ, 1.2, 1, len, stageColor);
+                     if(Math.random() < 0.5) spawnEnemy(curX, curY + 0.5, curZ);
                      curZ -= len/2;
                 }
                 else {
@@ -346,6 +364,7 @@
                         curX += (Math.random() - 0.5) * 5; 
                         curY += (Math.random() - 0.3) * 1.5; 
                         createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
+                        if(Math.random() < 0.2) spawnEnemy(curX, curY + 0.5, curZ);
                     }
                 }
             }
@@ -396,8 +415,8 @@
 
             // 1. Scene Setup
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x87CEEB); 
-            scene.fog = new THREE.Fog(0x87CEEB, 20, 150);
+            scene.background = new THREE.Color(0x1a1a2e);
+            scene.fog = new THREE.Fog(0x1a1a2e, 20, 150);
 
             // 2. Camera (FOV 85)
             camera = new THREE.PerspectiveCamera(85, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -409,10 +428,10 @@
             document.body.appendChild(renderer.domElement);
 
             // 4. Lighting
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            const ambientLight = new THREE.AmbientLight(0xaaaaaa, 0.4);
             scene.add(ambientLight);
             
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            const dirLight = new THREE.DirectionalLight(0x8888ff, 0.6);
             dirLight.position.set(50, 100, 50);
             dirLight.castShadow = true;
             dirLight.shadow.camera.left = -50;
@@ -486,6 +505,28 @@
                 group.userData.model = model;
                 isPlayerLoaded = true;
             });
+
+            const loader2 = new THREE.GLTFLoader();
+            loader2.load('enemy.glb', (gltf) => {
+                enemyModel = gltf.scene;
+                enemyModel.scale.set(0.08, 0.08, 0.08);
+                enemyModel.traverse(obj => {
+                    if (obj.isMesh) {
+                        obj.castShadow = true;
+                        obj.receiveShadow = true;
+                    }
+                });
+                // Process queued enemy spawns
+                for (let pos of enemySpawnQueue) {
+                    const enemyMesh = enemyModel.clone();
+                    enemyMesh.position.set(pos.x, pos.y, pos.z);
+                    scene.add(enemyMesh);
+                    enemies.push({ mesh: enemyMesh, startX: pos.x, startY: pos.y, startZ: pos.z, phase: Math.random() * Math.PI * 2 });
+                }
+                enemySpawnQueue = [];
+
+            });
+
         }
 
 
@@ -891,6 +932,29 @@
 
             if (!isClimbing) playerMesh.position.y += playerVelocity.y * timeScale;
 
+
+
+            // Enemy animation and collision
+            const playerRadius = 0.4;
+            const enemyRadius = 0.5;
+            for (let e of enemies) {
+                // Bobbing/moving animation
+                e.phase += dt * 2;
+                e.mesh.position.y = e.startY + Math.sin(e.phase) * 0.1;
+                e.mesh.rotation.y += 0.02;
+
+                // Collision detection
+                if (playerMesh && isPlayerLoaded) {
+                    const dx = playerMesh.position.x - e.mesh.position.x;
+                    const dy = playerMesh.position.y - e.mesh.position.y;
+                    const dz = playerMesh.position.z - e.mesh.position.z;
+                    const distSq = dx*dx + dy*dy + dz*dz;
+
+                    if (distSq < (playerRadius + enemyRadius) * (playerRadius + enemyRadius)) {
+                        respawn('fire'); // Die if touching enemy
+                    }
+                }
+            }
 
             checkPhysics(dt);
             updateAnimation(time);
