@@ -136,6 +136,7 @@
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
 
     <script>
@@ -183,6 +184,10 @@
         let isShiftPressed = false;
         let isSpacePressed = false;
         
+        // Enemy State
+        let enemyModelTemplate = null;
+        let activeEnemies = [];
+
         // Camera State
         let euler = new THREE.Euler(0, 0, 0, 'YXZ');
         let cameraZoom = 6; 
@@ -296,6 +301,10 @@
             let curY = nextStageStart.y;
             let curZ = nextStageStart.z;
 
+            // Clear old enemies
+            activeEnemies.forEach(e => scene.remove(e.mesh));
+            activeEnemies = [];
+
 
             const obstaclesCount = 5 + Math.floor(Math.random() * 4); 
 
@@ -321,6 +330,20 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+
+                    if (enemyModelTemplate && Math.random() > 0.5) {
+                        const enemy = THREE.SkeletonUtils.clone(enemyModelTemplate);
+                        enemy.position.set(curX, curY + 1.5, curZ);
+                        scene.add(enemy);
+                        activeEnemies.push({
+                            mesh: enemy,
+                            startX: curX,
+                            speed: 0.05 + Math.random() * 0.05,
+                            dir: Math.random() > 0.5 ? 1 : -1,
+                            range: w / 2 - 0.5
+                        });
+                    }
+
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -386,7 +409,7 @@
             
             const camOffset = new THREE.Vector3(xOffset, 2 + yDist, zDist);
             camOffset.applyEuler(euler);
-            camera.position.copy(playerMesh.position).add(camOffset);
+            camera.position.set(playerMesh.position.x, playerMesh.position.y, playerMesh.position.z).add(camOffset);
         }
 
         
@@ -426,6 +449,20 @@
             // 5. Create Player (Original Blocky)
             createPlayer();
 
+            // 5.5 Load Enemy
+            const gltfLoader = new THREE.GLTFLoader();
+            gltfLoader.load('enemy.glb', (gltf) => {
+                enemyModelTemplate = gltf.scene;
+                enemyModelTemplate.scale.set(0.1, 0.1, 0.1); // adjust scale as needed
+                enemyModelTemplate.traverse(child => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        child.material.color.setHex(0xff0000); // Red enemies
+                    }
+                });
+            });
+
             // 6. Create Initial Level
             createPlatform(0, 0, 0, 10, 1, 10, 0xaaaaaa, 'spawn'); 
             nextStageStart.set(0, 0, -5); 
@@ -461,7 +498,7 @@
 
         function createPlayer() {
             const group = new THREE.Group();
-            group.position.copy(spawnPoint);
+            group.position.set(spawnPoint.x, spawnPoint.y, spawnPoint.z);
             scene.add(group);
             playerMesh = group;
 
@@ -581,7 +618,7 @@
 
         // --- Physics Loop ---
         function respawn(type) {
-            playerMesh.position.copy(spawnPoint);
+            playerMesh.position.set(spawnPoint.x, spawnPoint.y, spawnPoint.z);
             playerVelocity.set(0, 0, 0);
             momentum.set(0, 0, 0);
             if (playerMesh.position.y < -30) playerVelocity.set(0,0,0);
@@ -650,14 +687,14 @@
                 climbNormal.set(0, 0, 1);
             }
             
-            playerMesh.position.copy(climbStartPos);
+            playerMesh.position.set(climbStartPos.x, climbStartPos.y, climbStartPos.z);
         }
 
         function checkPhysics(dt) {
             // Climbing Physics
             if (isClimbing) {
                 if (climbPhase === 0) {
-                    playerMesh.position.copy(climbStartPos); 
+                    playerMesh.position.set(climbStartPos.x, climbStartPos.y, climbStartPos.z);
                     
                     if (isSpacePressed) {
                         isClimbing = false;
@@ -695,7 +732,7 @@
                         const t = climbTimer / 0.4;
                         playerMesh.position.lerpVectors(climbStartPos, climbTargetPos, t);
                     } else {
-                        playerMesh.position.copy(climbTargetPos);
+                        playerMesh.position.set(climbTargetPos.x, climbTargetPos.y, climbTargetPos.z);
                         isClimbing = false;
                         isGrounded = true;
                     }
@@ -895,6 +932,37 @@
             checkPhysics(dt);
             updateAnimation(time);
 
+            // Enemy updates
+            if (activeEnemies) {
+                const px = playerMesh.position.x;
+                const py = playerMesh.position.y;
+                const pz = playerMesh.position.z;
+
+                for (let i = 0; i < activeEnemies.length; i++) {
+                    let e = activeEnemies[i];
+                    // Movement back and forth
+                    e.mesh.position.x += e.speed * e.dir * timeScale;
+                    if (e.mesh.position.x > e.startX + e.range) {
+                        e.dir = -1;
+                        e.mesh.rotation.y = -Math.PI/2;
+                    } else if (e.mesh.position.x < e.startX - e.range) {
+                        e.dir = 1;
+                        e.mesh.rotation.y = Math.PI/2;
+                    }
+
+                    e.mesh.rotation.x += 0.1 * timeScale;
+
+                    // Collision check
+                    const dx = px - e.mesh.position.x;
+                    const dy = py - e.mesh.position.y;
+                    const dz = pz - e.mesh.position.z;
+                    const distSq = dx*dx + dy*dy + dz*dz;
+                    if (distSq < 1.0) {
+                        respawn('fire');
+                        break;
+                    }
+                }
+            }
 
             // Ensure camera update runs every frame during the active game loop
             updateCameraPosition();
