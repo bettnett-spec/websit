@@ -99,7 +99,7 @@
 <body>
 
 
-    <div id="info">Stage: <span id="stage-display">1</span></div>
+    <div id="info">Stage: <span id="stage-display">1</span> | Score: <span id="score-display">0</span></div>
     <div id="checkpoint-msg">CHECKPOINT! NEXT LEVEL GENERATED</div>
     <div id="crosshair"></div>
 
@@ -125,6 +125,7 @@
     </div>
 
 
+        <audio id="sfx-ding" src="ding.mp3"></audio>
     <!-- SOUND EFFECTS -->
     <audio id="sfx-jump" src="jump.mp3"></audio>
     <audio id="sfx-check" src="checkpoint.wav"></audio>
@@ -139,6 +140,14 @@
 
 
     <script>
+
+        // --- Upgrade Globals ---
+        let enemyModelTemplate = null;
+        let enemies = [];
+        let collectibles = [];
+        let playerScore = 0;
+        const sfxDing = document.getElementById('sfx-ding');
+
         // --- Game Constants ---
         const PLAYER_HEIGHT = 1.6; 
         const PLAYER_SPEED_RUN = 0.22; 
@@ -321,6 +330,23 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+
+                    // Add collectible or enemy
+                    if (Math.random() < 0.5) {
+                        const colGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+                        const colMat = new THREE.MeshLambertMaterial({color: 0xffff00});
+                        const colMesh = new THREE.Mesh(colGeo, colMat);
+                        colMesh.position.set(curX, curY + 1.5, curZ);
+                        colMesh.castShadow = true;
+                        scene.add(colMesh);
+                        collectibles.push({ mesh: colMesh, active: true });
+                    } else if (enemyModelTemplate) {
+                        const enMesh = enemyModelTemplate.clone();
+                        enMesh.position.set(curX, curY + 0.5, curZ);
+                        scene.add(enMesh);
+                        enemies.push({ mesh: enMesh, active: true, startX: curX, time: Math.random() * 100 });
+                    }
+
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -390,6 +416,7 @@
         }
 
         
+
         // --- Core Initialization ---
         function init() {
             clock = new THREE.Clock();
@@ -425,6 +452,20 @@
 
             // 5. Create Player (Original Blocky)
             createPlayer();
+
+
+            // Load Enemy Model
+            const loader = new THREE.GLTFLoader();
+            loader.load('enemy.glb', (gltf) => {
+                enemyModelTemplate = gltf.scene;
+                enemyModelTemplate.scale.set(0.2, 0.2, 0.2); // Adjust scale as needed
+                enemyModelTemplate.traverse(child => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+            });
 
             // 6. Create Initial Level
             createPlatform(0, 0, 0, 10, 1, 10, 0xaaaaaa, 'spawn'); 
@@ -780,6 +821,24 @@
             }
 
             if (playerMesh.position.y < -30) respawn('fall');
+
+            // Check collisions with collectibles
+            for (let c of collectibles) {
+                if (c.active && playerMesh.position.distanceTo(c.mesh.position) < 1.5) {
+                    c.active = false;
+                    c.mesh.visible = false;
+                    playerScore += 10;
+                    document.getElementById('score-display').innerText = playerScore;
+                    if(sfxDing) { sfxDing.currentTime=0; sfxDing.play().catch(e => {}); }
+                }
+            }
+
+            // Check collisions with enemies
+            for (let e of enemies) {
+                if (e.active && playerMesh.position.distanceTo(e.mesh.position) < 1.0) {
+                    respawn('fire');
+                }
+            }
         }
 
         function triggerCheckpoint(p) {
@@ -897,6 +956,20 @@
 
 
             // Ensure camera update runs every frame during the active game loop
+            // Spin collectibles and move enemies
+            for (let c of collectibles) {
+                if (c.active) {
+                    c.mesh.rotation.x += dt * 2;
+                    c.mesh.rotation.y += dt * 2;
+                }
+            }
+            for (let e of enemies) {
+                if (e.active) {
+                    e.time += dt * 2;
+                    e.mesh.position.x = e.startX + Math.sin(e.time) * 1.5;
+                }
+            }
+
             updateCameraPosition();
             renderer.render(scene, camera);
         }
