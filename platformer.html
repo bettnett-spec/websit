@@ -136,6 +136,8 @@
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
+
 
 
     <script>
@@ -149,6 +151,8 @@
         const PI_2 = Math.PI / 2;
         
         // --- Global Variables ---
+        let hazardModel = null;
+        let hazards = [];
         let camera, scene, renderer;
         let playerMesh; // Player Group (root of the character)
         let platforms = [];
@@ -281,7 +285,15 @@
                 height: h,
                 depth: d,
                 type: type,
-                stage: currentStage
+                stage: currentStage,
+                originalX: x,
+                originalY: y,
+                originalZ: z,
+                moving: false,
+                moveSpeed: 0,
+                moveRange: 0,
+                moveAxis: 'x',
+                timeOffset: Math.random() * Math.PI * 2
             };
             platforms.push(platformData);
             return mesh;
@@ -320,7 +332,16 @@
                     const w = 3 + Math.random() * 3;
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
-                    createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    let p = createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    let pData = platforms[platforms.length - 1];
+                    // Make some platforms move
+                    if (Math.random() < 0.5) {
+                        pData.moving = true;
+                        pData.moveSpeed = 1 + Math.random() * 2;
+                        pData.moveRange = 2 + Math.random() * 3;
+                        pData.moveAxis = Math.random() < 0.5 ? 'x' : 'z';
+                        p.material.color.setHex(0xFFA500); // Orange for moving platforms
+                    }
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -336,7 +357,23 @@
                 else if (r < 0.7) {
                      const len = 6 + Math.random() * 6;
                      curZ -= len/2;
-                     createPlatform(curX, curY, curZ, 1.2, 1, len, stageColor);
+                     let p = createPlatform(curX, curY, curZ, 1.2, 1, len, stageColor);
+
+                     // Place hazard
+                     if (hazardModel && Math.random() < 0.6) {
+                         let hazard = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(hazardModel) : hazardModel.clone();
+                         hazard.position.set(curX, curY + 0.5, curZ);
+                         scene.add(hazard);
+                         hazards.push({
+                             mesh: hazard,
+                             radius: 0.6,
+                             stage: currentStage
+                         });
+
+                         // add a slow rotation to the hazard
+                         hazard.userData.rotationSpeed = (Math.random() - 0.5) * 2;
+                     }
+
                      curZ -= len/2;
                 }
                 else {
@@ -391,7 +428,21 @@
 
         
         // --- Core Initialization ---
+        // let hazardModel = null;
+        // let hazards = [];
+
         function init() {
+            const loader = new THREE.GLTFLoader();
+            loader.load('enemy.glb', (gltf) => {
+                hazardModel = gltf.scene;
+                hazardModel.scale.set(0.05, 0.05, 0.05); // scale appropriately
+                hazardModel.traverse(obj => {
+                    if (obj.isMesh) {
+                        obj.castShadow = true;
+                        obj.receiveShadow = true;
+                    }
+                });
+            });
             clock = new THREE.Clock();
 
             // 1. Scene Setup
@@ -891,9 +942,63 @@
 
             if (!isClimbing) playerMesh.position.y += playerVelocity.y * timeScale;
 
+            // Move platforms
+            for (let p of platforms) {
+                if (p.moving) {
+                    let offset = Math.sin(time * p.moveSpeed + p.timeOffset) * p.moveRange;
+                    let lastX = p.mesh.position.x;
+                    let lastZ = p.mesh.position.z;
+                    if (p.moveAxis === 'x') {
+                        p.mesh.position.x = p.originalX + offset;
+                    } else if (p.moveAxis === 'z') {
+                        p.mesh.position.z = p.originalZ + offset;
+                    }
+
+                    // Update bounding box if needed (not strictly necessary here as we use pos + w/h/d directly, but good practice)
+                    p.box.setFromObject(p.mesh);
+
+                    // If player is standing on this platform, move player too
+                    if (isGrounded && Math.abs(playerMesh.position.y - (p.mesh.position.y + p.height/2 + 0.5)) < 0.1) {
+                        // Check if we are actually horizontally on it
+                        const minX = p.mesh.position.x - p.width/2 - 0.4;
+                        const maxX = p.mesh.position.x + p.width/2 + 0.4;
+                        const minZ = p.mesh.position.z - p.depth/2 - 0.4;
+                        const maxZ = p.mesh.position.z + p.depth/2 + 0.4;
+                        if (playerMesh.position.x > minX && playerMesh.position.x < maxX &&
+                            playerMesh.position.z > minZ && playerMesh.position.z < maxZ) {
+
+                            let dx = p.mesh.position.x - lastX;
+                            let dz = p.mesh.position.z - lastZ;
+                            playerMesh.position.x += dx;
+                            playerMesh.position.z += dz;
+
+                            // update climb start pos if climbing
+                            if (isClimbing) {
+                                climbStartPos.x += dx; climbTargetPos.x += dx;
+                                climbStartPos.z += dz; climbTargetPos.z += dz;
+                            }
+                        }
+                    }
+                }
+            }
 
             checkPhysics(dt);
             updateAnimation(time);
+
+            // Hazards animation & collision
+            for (let i = hazards.length - 1; i >= 0; i--) {
+                let hz = hazards[i];
+                hz.mesh.rotation.y += hz.mesh.userData.rotationSpeed * dt;
+
+                // Collision check (simple cylinder/sphere check)
+                if (Math.abs(hz.mesh.position.y - playerMesh.position.y) < 1.5) {
+                    let dx = hz.mesh.position.x - playerMesh.position.x;
+                    let dz = hz.mesh.position.z - playerMesh.position.z;
+                    if (Math.sqrt(dx*dx + dz*dz) < hz.radius + 0.4) { // player radius is ~0.4
+                        respawn('fire');
+                    }
+                }
+            }
 
 
             // Ensure camera update runs every frame during the active game loop
