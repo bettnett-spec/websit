@@ -131,6 +131,7 @@
     <audio id="sfx-death" src="death.mp3"></audio>
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
+    <audio id="sfx-wind" src="wind.mp3" loop></audio>
 
 
     <!-- Three.js from CDN -->
@@ -155,6 +156,10 @@
         let clock; 
         let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
         
+        let globalPistolModel = null;
+        let globalEnemyModel = null;
+        let enemies = [];
+
         // Physics State
         let playerVelocity = new THREE.Vector3();
         let momentum = new THREE.Vector3(); 
@@ -346,6 +351,19 @@
                         curX += (Math.random() - 0.5) * 5; 
                         curY += (Math.random() - 0.3) * 1.5; 
                         createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
+
+                        if (Math.random() < 0.3 && globalEnemyModel) {
+                            const enemy = globalEnemyModel.clone();
+                            enemy.position.set(curX, curY + 0.5, curZ);
+                            scene.add(enemy);
+                            enemies.push({
+                                mesh: enemy,
+                                startX: curX,
+                                platformWidth: 2,
+                                direction: 1,
+                                speed: 0.05 + Math.random() * 0.05
+                            });
+                        }
                     }
                 }
             }
@@ -354,11 +372,18 @@
             curZ -= 4;
             createPlatform(curX, curY, curZ - 3, 8, 1, 6, 0x00FF00, 'checkpoint');
             
-            const geo = new THREE.CylinderGeometry(0.5, 0.5, 5);
-            const mat = new THREE.MeshBasicMaterial({color: 0xffff00});
-            const pole = new THREE.Mesh(geo, mat);
-            pole.position.set(curX + 3, curY + 2.5, curZ - 3);
-            scene.add(pole);
+            if (globalPistolModel) {
+                const pistol = globalPistolModel.clone();
+                pistol.position.set(curX, curY + 2.0, curZ - 3);
+                pistol.userData.isCheckpointPistol = true;
+                scene.add(pistol);
+            } else {
+                const geo = new THREE.CylinderGeometry(0.5, 0.5, 5);
+                const mat = new THREE.MeshBasicMaterial({color: 0xffff00});
+                const pole = new THREE.Mesh(geo, mat);
+                pole.position.set(curX + 3, curY + 2.5, curZ - 3);
+                scene.add(pole);
+            }
 
 
             nextStageStart.set(curX, curY, curZ - 6);
@@ -445,6 +470,12 @@
                     }).catch(e => { /* Audio playback error handling */ });
                 }
                 
+                const sfxWind = document.getElementById('sfx-wind');
+                if (sfxWind) {
+                    sfxWind.volume = 0.5;
+                    sfxWind.play().catch(e => {});
+                }
+
                 document.body.requestPointerLock();
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
@@ -485,6 +516,30 @@
                 group.add(model);
                 group.userData.model = model;
                 isPlayerLoaded = true;
+            });
+
+            loader.load('pistol.glb', (gltf) => {
+                const model = gltf.scene;
+                model.scale.set(0.5, 0.5, 0.5);
+                model.traverse(obj => {
+                    if (obj.isMesh) {
+                        obj.castShadow = true;
+                        obj.receiveShadow = true;
+                    }
+                });
+                globalPistolModel = model;
+            });
+
+            loader.load('enemy.glb', (gltf) => {
+                const model = gltf.scene;
+                model.scale.set(0.06, 0.06, 0.06);
+                model.traverse(obj => {
+                    if (obj.isMesh) {
+                        obj.castShadow = true;
+                        obj.receiveShadow = true;
+                    }
+                });
+                globalEnemyModel = model;
             });
         }
 
@@ -897,6 +952,35 @@
 
 
             // Ensure camera update runs every frame during the active game loop
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const e = enemies[i];
+                e.mesh.position.x += e.direction * e.speed * timeScale;
+                const distFromCenter = Math.abs(e.mesh.position.x - e.startX);
+
+                if (distFromCenter > (e.platformWidth / 2) - 0.3) {
+                    e.direction *= -1;
+                    e.mesh.rotation.y = e.direction === 1 ? Math.PI / 2 : -Math.PI / 2;
+                }
+
+                const distToPlayer = e.mesh.position.distanceTo(playerMesh.position);
+                if (distToPlayer < 1.0) {
+                    respawn('fire');
+                }
+
+                // Cleanup enemies far behind
+                if (e.mesh.position.z > playerMesh.position.z + 40) {
+                    scene.remove(e.mesh);
+                    enemies.splice(i, 1);
+                }
+            }
+
+            scene.children.forEach(child => {
+                if (child.userData && child.userData.isCheckpointPistol) {
+                    child.rotation.y += 2 * dt;
+                    child.position.y += Math.sin(time * 3) * 0.005;
+                }
+            });
+
             updateCameraPosition();
             renderer.render(scene, camera);
         }
