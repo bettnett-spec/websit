@@ -7,15 +7,11 @@ const { chromium } = require('playwright');
   page.on('console', msg => console.log('BROWSER CONSOLE:', msg.text()));
   page.on('pageerror', err => console.log('BROWSER ERROR:', err));
 
-  await page.goto('http://localhost:8000/shooter.html');
+  await page.goto('http://localhost:8000/platformer.html');
   await page.waitForTimeout(2000);
 
-  // Click start game
-  const nameInput = await page.$('#player-name-input');
-  if (nameInput) {
-    await nameInput.fill('TestPlayer');
-    await page.click('#start-game-btn');
-  }
+  // Click start game / instructions to trigger initialization
+  await page.click('#instructions');
 
   await page.waitForTimeout(3000);
   await browser.close();
