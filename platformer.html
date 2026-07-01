@@ -131,6 +131,9 @@
     <audio id="sfx-death" src="death.mp3"></audio>
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
+    <audio id="sfx-wind" src="wind.mp3" loop></audio>
+    <audio id="sfx-shoot" src="pistol.mp3"></audio>
+    <audio id="sfx-ding" src="ding.mp3"></audio>
 
 
     <!-- Three.js from CDN -->
@@ -152,6 +155,9 @@
         let camera, scene, renderer;
         let playerMesh; // Player Group (root of the character)
         let platforms = [];
+        let enemies = []; // Store enemy objects (mesh, box, etc.)
+        let enemyModelTemplate = null; // Store loaded enemy model to clone
+        let weaponModel = null;
         let clock; 
         let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
         
@@ -201,8 +207,10 @@
         const sfxDeath = document.getElementById('sfx-death');
         const sfxFire = document.getElementById('sfx-fire');
         const sfxWalk = document.getElementById('sfx-walk');
+        const sfxWind = document.getElementById('sfx-wind');
         
         if(sfxWalk) sfxWalk.volume = 0.4; 
+        if(sfxWind) sfxWind.volume = 0.5;
 
         // Radio System
         const radioTracks = [
@@ -288,6 +296,21 @@
         }
 
 
+        function spawnEnemy(x, y, z) {
+            if (!enemyModelTemplate) return;
+            const enemyGroup = new THREE.Group();
+            const mesh = enemyModelTemplate.clone();
+            mesh.position.y = -0.5; // Offset to sit on platform
+            enemyGroup.add(mesh);
+            enemyGroup.position.set(x, y + 1, z); // Place on top of platform
+            scene.add(enemyGroup);
+
+            enemies.push({
+                mesh: enemyGroup,
+                box: new THREE.Box3().setFromObject(enemyGroup)
+            });
+        }
+
         function generateRandomStage() {
             const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
             const stageColor = colors[Math.floor(Math.random() * colors.length)];
@@ -321,6 +344,7 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    if (Math.random() < 0.4) spawnEnemy(curX, curY, curZ);
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -337,6 +361,7 @@
                      const len = 6 + Math.random() * 6;
                      curZ -= len/2;
                      createPlatform(curX, curY, curZ, 1.2, 1, len, stageColor);
+                     if (Math.random() < 0.3) spawnEnemy(curX, curY, curZ);
                      curZ -= len/2;
                 }
                 else {
@@ -346,6 +371,7 @@
                         curX += (Math.random() - 0.5) * 5; 
                         curY += (Math.random() - 0.3) * 1.5; 
                         createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
+                        if (Math.random() < 0.2) spawnEnemy(curX, curY, curZ);
                     }
                 }
             }
@@ -423,10 +449,33 @@
             dirLight.shadow.mapSize.height = 2048;
             scene.add(dirLight);
 
-            // 5. Create Player (Original Blocky)
+            // 5. Load Enemy Model
+            const loader = new THREE.GLTFLoader();
+            loader.load('enemy.glb', (gltf) => {
+                enemyModelTemplate = gltf.scene;
+                enemyModelTemplate.scale.set(0.04, 0.04, 0.04);
+                enemyModelTemplate.traverse(child => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+            });
+
+            // 5b. Load Weapon Model
+            loader.load('pistol.glb', (gltf) => {
+                weaponModel = gltf.scene;
+                weaponModel.scale.set(0.1, 0.1, 0.1);
+                weaponModel.rotation.y = Math.PI / 2;
+                weaponModel.position.set(0.25, -0.5, -0.6); // Attach to camera relative space
+                camera.add(weaponModel);
+                scene.add(camera);
+            });
+
+            // 6. Create Player (Original Blocky)
             createPlayer();
 
-            // 6. Create Initial Level
+            // 7. Create Initial Level
             createPlatform(0, 0, 0, 10, 1, 10, 0xaaaaaa, 'spawn'); 
             nextStageStart.set(0, 0, -5); 
             generateRandomStage();
@@ -449,6 +498,7 @@
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
             document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mousedown', onMouseDown);
 
             // --- Camera Snap Fix ---
             updateCameraPosition();
@@ -554,6 +604,53 @@
         }
 
 
+        function onMouseDown(event) {
+            if (!isLocked) return;
+            const sfxShoot = document.getElementById('sfx-shoot');
+            if (sfxShoot) {
+                sfxShoot.currentTime = 0;
+                sfxShoot.play().catch(e => {});
+            }
+
+            if (weaponModel) {
+                weaponModel.position.z += 0.05;
+                setTimeout(() => { weaponModel.position.z -= 0.05 }, 80);
+            }
+
+            // Raycast for shooting
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            raycaster.far = 50;
+
+            const enemyMeshes = enemies.map(e => e.mesh);
+            const intersects = raycaster.intersectObjects(enemyMeshes, true);
+
+            if (intersects.length > 0) {
+                // Find which enemy we hit
+                const hitObj = intersects[0].object;
+                const hitEnemyIndex = enemies.findIndex(e => {
+                    let parent = hitObj;
+                    while (parent) {
+                        if (parent === e.mesh) return true;
+                        parent = parent.parent;
+                    }
+                    return false;
+                });
+
+                if (hitEnemyIndex !== -1) {
+                    const sfxDing = document.getElementById('sfx-ding');
+                    if (sfxDing) {
+                        sfxDing.currentTime = 0;
+                        sfxDing.play().catch(e => {});
+                    }
+
+                    // Remove Enemy
+                    scene.remove(enemies[hitEnemyIndex].mesh);
+                    enemies.splice(hitEnemyIndex, 1);
+                }
+            }
+        }
+
         function pointerLockChange() {
             if (document.pointerLockElement === document.body) {
                 isLocked = true;
@@ -654,6 +751,27 @@
         }
 
         function checkPhysics(dt) {
+            // Hazard check: enemies
+            const playerRadiusHazard = 0.4;
+            const nextXHazard = playerMesh.position.x;
+            const nextZHazard = playerMesh.position.z;
+            const feetYHazard = playerMesh.position.y - 0.5;
+            const headYHazard = playerMesh.position.y + 1.0;
+
+            for (let e of enemies) {
+                const ex = e.mesh.position.x;
+                const ez = e.mesh.position.z;
+                const ey = e.mesh.position.y;
+
+                // Simple bounding box collision
+                if (Math.abs(nextXHazard - ex) < 0.8 && Math.abs(nextZHazard - ez) < 0.8) {
+                    if (headYHazard > ey - 1.0 && feetYHazard < ey + 1.0) {
+                        respawn('fire');
+                        return;
+                    }
+                }
+            }
+
             // Climbing Physics
             if (isClimbing) {
                 if (climbPhase === 0) {
@@ -891,6 +1009,11 @@
 
             if (!isClimbing) playerMesh.position.y += playerVelocity.y * timeScale;
 
+            if (playerVelocity.y < -0.3 && !isGrounded && !isClimbing) {
+                if(sfxWind && sfxWind.paused) sfxWind.play().catch(e => {});
+            } else {
+                if(sfxWind && !sfxWind.paused) sfxWind.pause();
+            }
 
             checkPhysics(dt);
             updateAnimation(time);
