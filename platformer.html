@@ -465,27 +465,17 @@
             scene.add(group);
             playerMesh = group;
 
-            const loader = new THREE.GLTFLoader();
-            loader.load('astolfo_school_uniform.glb', (gltf) => {
-                const model = gltf.scene;
+            const geometry = new THREE.BoxGeometry(0.8, 1.6, 0.8);
+            const material = new THREE.MeshLambertMaterial({ color: 0xff0000 });
+            const model = new THREE.Mesh(geometry, material);
 
-                // Scale and position adjustment to match previous player size
-                // Original was ~3 units tall
-                model.scale.set(1.5, 1.5, 1.5);
-                model.position.y = -0.5; // adjust feet
-                model.rotation.y = Math.PI; // Face away from camera by default
+            model.position.y = -0.5;
+            model.castShadow = true;
+            model.receiveShadow = true;
 
-                model.traverse(obj => {
-                    if (obj.isMesh) {
-                        obj.castShadow = true;
-                        obj.receiveShadow = true;
-                    }
-                });
-
-                group.add(model);
-                group.userData.model = model;
-                isPlayerLoaded = true;
-            });
+            group.add(model);
+            group.userData.model = model;
+            isPlayerLoaded = true;
         }
 
 
