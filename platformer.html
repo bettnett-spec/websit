@@ -317,10 +317,31 @@
 
 
                 if (r < 0.3) {
-                    const w = 3 + Math.random() * 3;
+                                        const w = 3 + Math.random() * 3;
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
-                    createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    let platformMesh = createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+
+                    // Spawn enemy?
+                    if (Math.random() < 0.4 && window.enemyModel) {
+                        const enemyGroup = new THREE.Group();
+                        const cloned = THREE.SkeletonUtils.clone(window.enemyModel);
+                        enemyGroup.add(cloned);
+                        enemyGroup.scale.set(0.06, 0.06, 0.06);
+                        enemyGroup.position.set(curX, curY + 0.5, curZ);
+                        scene.add(enemyGroup);
+
+                        const sound = new THREE.PositionalAudio(audioListener);
+                        enemyGroup.add(sound);
+
+                        enemies.push({
+                            mesh: enemyGroup,
+                            active: true,
+                            lastShot: 0,
+                            sound: sound
+                        });
+                    }
+
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -390,7 +411,15 @@
         }
 
         
-        // --- Core Initialization ---
+                // --- Core Initialization ---
+
+        let gltfLoader;
+        let weaponContainer;
+        let audioListener;
+        let audioBuffers = {};
+        let enemies = [];
+        let score = 0;
+
         function init() {
             clock = new THREE.Clock();
 
@@ -402,6 +431,35 @@
             // 2. Camera (FOV 85)
             camera = new THREE.PerspectiveCamera(85, window.innerWidth / window.innerHeight, 0.1, 1000);
             
+            audioListener = new THREE.AudioListener();
+            camera.add(audioListener);
+
+            weaponContainer = new THREE.Group();
+            camera.add(weaponContainer);
+            scene.add(camera);
+
+            const manager = new THREE.LoadingManager();
+            const audioLoader = new THREE.AudioLoader(manager);
+
+            audioLoader.load('/akm.mp3', (buffer) => { audioBuffers['akm'] = buffer; });
+            audioLoader.load('/enemy_shoot.mp3', (buffer) => { audioBuffers['enemy'] = buffer; });
+            audioLoader.load('/ding.mp3', (buffer) => { audioBuffers['ding'] = buffer; });
+
+            gltfLoader = new THREE.GLTFLoader(manager);
+
+            gltfLoader.load('/akm.glb', (gltf) => {
+                const model = gltf.scene;
+                model.scale.set(0.1, 0.1, 0.1);
+                model.rotation.y = 1.57;
+                model.position.set(0.25, -0.5, -0.6);
+                weaponContainer.add(model);
+            });
+
+            gltfLoader.load('/enemy.glb', (gltf) => {
+                window.enemyModel = gltf.scene;
+            });
+
+
             // 3. Renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -437,7 +495,7 @@
             document.addEventListener('wheel', onScroll); 
             window.addEventListener('resize', onWindowResize);
             
-            instructions.addEventListener('click', function() {
+                        instructions.addEventListener('click', function() {
                 if(sfxJump) { 
                     sfxJump.play().then(() => {
                         sfxJump.pause();
@@ -449,6 +507,51 @@
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
             document.addEventListener('mousemove', onMouseMove);
+
+            document.addEventListener('mousedown', (e) => {
+                if (!isLocked) return;
+
+                // Play shoot sound
+                if (audioBuffers['akm']) {
+                    const sound = new THREE.Audio(audioListener);
+                    sound.setBuffer(audioBuffers['akm']);
+                    sound.setVolume(0.5);
+                    sound.play();
+                }
+
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+                const targets = enemies.filter(en => en.active).map(en => en.mesh);
+                const intersects = raycaster.intersectObjects(targets, true);
+
+                if (intersects.length > 0) {
+                    const hit = intersects[0].object;
+                    const enemy = enemies.find(en => {
+                        let p = hit;
+                        while(p) {
+                            if (p === en.mesh) return true;
+                            p = p.parent;
+                        }
+                        return false;
+                    });
+
+                    if (enemy) {
+                        enemy.active = false;
+                        enemy.mesh.visible = false;
+                        score += 10;
+                        document.getElementById('stage-display').innerText = currentStage + " | Score: " + score;
+
+                        if (audioBuffers['ding']) {
+                            const sound = new THREE.Audio(audioListener);
+                            sound.setBuffer(audioBuffers['ding']);
+                            sound.setVolume(0.8);
+                            sound.play();
+                        }
+                    }
+                }
+            });
+
 
             // --- Camera Snap Fix ---
             updateCameraPosition();
@@ -789,13 +892,59 @@
             }
         }
 
-        // The animate loop starts only after init() resolves
+                // The animate loop starts only after init() resolves
         function animate() {
             requestAnimationFrame(animate);
             
             const dt = clock.getDelta();
             const timeScale = Math.min(dt * 60, 4);
             const time = Date.now() / 1000;
+            const now = Date.now();
+
+            // Enemy Logic
+            if (isPlayerLoaded && isLocked && !isClimbing) {
+                enemies.forEach(enemy => {
+                    if (!enemy.active) return;
+
+                    enemy.mesh.lookAt(camera.position.x, enemy.mesh.position.y, camera.position.z);
+
+                    const dist = enemy.mesh.position.distanceTo(playerMesh.position);
+                    if (dist < 40 && now - enemy.lastShot > 1500) {
+                        // Raycast to check line of sight
+                        const start = new THREE.Vector3(enemy.mesh.position.x, enemy.mesh.position.y + 1.5, enemy.mesh.position.z);
+                        const end = new THREE.Vector3(playerMesh.position.x, playerMesh.position.y + 0.5, playerMesh.position.z);
+                        const dir = new THREE.Vector3().subVectors(end, start).normalize();
+
+                        const raycaster = new THREE.Raycaster(start, dir);
+                        raycaster.far = dist;
+                        const intersects = raycaster.intersectObjects(platforms.map(p => p.mesh), false);
+
+                        if (intersects.length === 0) {
+                            // Shoot
+                            enemy.lastShot = now;
+
+                            // Visuals
+                            const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+                            const points = [start, end];
+                            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                            const line = new THREE.Line(geometry, material);
+                            scene.add(line);
+                            setTimeout(() => scene.remove(line), 100);
+
+                            if (audioBuffers['enemy']) {
+                                if (enemy.sound.isPlaying) enemy.sound.stop();
+                                enemy.sound.setBuffer(audioBuffers['enemy']);
+                                enemy.sound.setRefDistance(5);
+                                enemy.sound.play();
+                            }
+
+                            // Hit player
+                            respawn('fire');
+                        }
+                    }
+                });
+            }
+
 
             // Check if player is loaded
             if (!isLocked && isPlayerLoaded) {
