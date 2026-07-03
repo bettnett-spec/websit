@@ -94,14 +94,71 @@
         #radio-controls button:hover {
             background: rgba(170,0,255,0.5); border-color: #aa00ff;
         }
+
+        #health {
+            position: absolute; bottom: 20px; left: 20px;
+            border-left: 4px solid #00ff00;
+            padding: 15px 25px; border-radius: 0 8px 8px 0;
+            font-weight: bold; font-size: 24px;
+            text-shadow: 1px 1px 2px black;
+            min-width: 200px;
+            background: linear-gradient(135deg, rgba(0,0,0,0.8), rgba(20,20,20,0.6));
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            z-index: 1002;
+        }
+        #damage-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle, transparent 30%, rgba(255,0,0,0.4) 100%);
+            opacity: 0; pointer-events: none; z-index: 1003;
+            transition: opacity 0.15s ease-out;
+        }
+
+        .weapon-slot { margin: 8px 0; transition: all 0.2s; opacity: 0.7; }
+        .active-weapon {
+            color: #ffaa00; text-shadow: 0 0 10px #ffaa00;
+            font-weight: bold; transform: scale(1.05) translateX(10px);
+            opacity: 1;
+        }
+        #controls-hint {
+            position: absolute; top: 20px; right: 20px;
+            border-right: 4px solid #00aaff;
+            padding: 15px 20px; border-radius: 8px 0 0 8px;
+            background: linear-gradient(135deg, rgba(0,0,0,0.8), rgba(20,20,20,0.6));
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            z-index: 1002;
+            text-align: right;
+        }
     </style>
 </head>
 <body>
 
 
+    <div id="damage-overlay"></div>
     <div id="info">Stage: <span id="stage-display">1</span></div>
     <div id="checkpoint-msg">CHECKPOINT! NEXT LEVEL GENERATED</div>
     <div id="crosshair"></div>
+
+    <div id="health">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="letter-spacing: 2px; font-size: 16px; color: #aaa;">ARMOR</span>
+            <span id="hp-val" style="font-size: 28px;">100</span>
+        </div>
+        <div style="width: 100%; height: 12px; background: rgba(0,0,0,0.8); border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.2);">
+            <div id="hp-bar" style="width: 100%; height: 100%; background: linear-gradient(90deg, #00aa00, #00ff00); transition: width 0.2s, background 0.2s;"></div>
+        </div>
+    </div>
+
+    <div id="controls-hint">
+        <div id="w-slot-1" class="weapon-slot">AKM <span class="key">1</span></div>
+        <div id="w-slot-2" class="weapon-slot">Pistol <span class="key">2</span></div>
+        <div id="w-slot-3" class="weapon-slot active-weapon">Hands <span class="key">3</span></div>
+    </div>
 
     <div id="radio-container">
         <div id="radio-title">RADIO: OFF</div>
@@ -133,12 +190,21 @@
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
 
 
-    <!-- Three.js from CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <!-- Import Maps for Modules -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+    </script>
 
 
-    <script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
         // --- Game Constants ---
         const PLAYER_HEIGHT = 1.6; 
         const PLAYER_SPEED_RUN = 0.22; 
@@ -155,6 +221,25 @@
         let clock; 
         let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
         
+        // Combat State
+        let playerHealth = 100;
+        let weaponContainer;
+        let weaponModels = {};
+        let currentWeaponIdx = 2; // 0=akm, 1=pistol, 2=hands
+        const WEAPON_SCALE = 0.1;
+        const GUN_OFFSET = { x: 0.25, y: -0.5, z: -0.6 };
+        const HAND_OFFSET = { x: 0.0, y: -0.5, z: -0.6 };
+        let muzzleLight;
+        let enemyBodies = [];
+        let enemyModelPrefab;
+        let isMouseDown = false;
+        let lastShootTime = 0;
+        const WEAPONS = [
+            { name: 'akm', modelKey: 'akm', fireRate: 100, auto: true, type: 'hitscan', id: 0, range: 100 },
+            { name: 'pistol', modelKey: 'pistol', fireRate: 400, auto: false, type: 'hitscan', id: 1, range: 100 },
+            { name: 'hands', modelKey: 'hands', fireRate: 600, auto: false, type: 'melee', range: 4, id: 2 }
+        ];
+
         // Physics State
         let playerVelocity = new THREE.Vector3();
         let momentum = new THREE.Vector3(); 
@@ -321,6 +406,7 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    if (enemyModelPrefab && Math.random() > 0.5) spawnEnemy(curX, curY + 1.5, curZ);
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -346,6 +432,7 @@
                         curX += (Math.random() - 0.5) * 5; 
                         curY += (Math.random() - 0.3) * 1.5; 
                         createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
+                        if (enemyModelPrefab && s === steps - 1 && Math.random() > 0.5) spawnEnemy(curX, curY + 1.5, curZ);
                     }
                 }
             }
@@ -450,6 +537,12 @@
             document.addEventListener('pointerlockchange', pointerLockChange);
             document.addEventListener('mousemove', onMouseMove);
 
+            document.addEventListener('mousedown', (e) => {
+                if (!isLocked) return;
+                isMouseDown = true; checkShoot();
+            });
+            document.addEventListener('mouseup', () => { isMouseDown = false; });
+
             // --- Camera Snap Fix ---
             updateCameraPosition();
 
@@ -476,9 +569,163 @@
             group.add(model);
             group.userData.model = model;
             isPlayerLoaded = true;
+
+            // Weapons
+            weaponContainer = new THREE.Group();
+            camera.add(weaponContainer);
+            scene.add(camera);
+
+            muzzleLight = new THREE.PointLight(0xffff00, 0, 5);
+            muzzleLight.position.set(0, 0.2, -1);
+            weaponContainer.add(muzzleLight);
+
+            const gltfLoader = new GLTFLoader();
+            const loadWeapon = (name, path) => {
+                gltfLoader.load(path, (gltf) => {
+                    const wModel = gltf.scene;
+                    wModel.scale.set(WEAPON_SCALE, WEAPON_SCALE, WEAPON_SCALE);
+                    wModel.rotation.y = 1.57; // WEAPON_ROTATION_Y
+                    wModel.visible = false;
+                    weaponContainer.add(wModel);
+                    weaponModels[name] = wModel;
+
+                    if (name === 'hands' && currentWeaponIdx === 2) {
+                        wModel.visible = true;
+                        weaponContainer.position.set(HAND_OFFSET.x, HAND_OFFSET.y, HAND_OFFSET.z);
+                    }
+                });
+            };
+
+            loadWeapon('akm', 'akm.glb');
+            loadWeapon('pistol', 'pistol.glb');
+            loadWeapon('hands', 'hands.glb');
+
+            gltfLoader.load('enemy.glb', (gltf) => {
+                enemyModelPrefab = gltf.scene;
+                enemyModelPrefab.scale.set(0.06, 0.06, 0.06);
+            });
         }
 
 
+
+        // --- Combat Logic ---
+        function takeDamage(amount) {
+            playerHealth -= amount;
+            updateHealthUI();
+
+            const overlay = document.getElementById('damage-overlay');
+            overlay.style.opacity = '0.8';
+            setTimeout(() => overlay.style.opacity = '0', 200);
+
+            if (playerHealth <= 0) {
+                respawn('death');
+            }
+        }
+
+        function spawnEnemy(x, y, z) {
+            if (!enemyModelPrefab) return;
+            const enemyGroup = new THREE.Group();
+            const mesh = enemyModelPrefab.clone();
+            mesh.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+            enemyGroup.add(mesh);
+            enemyGroup.position.set(x, y, z);
+            scene.add(enemyGroup);
+
+            enemyBodies.push({
+                mesh: enemyGroup,
+                health: 100,
+                lastShot: 0
+            });
+        }
+        function switchWeapon(index) {
+            if (index < 0 || index >= WEAPONS.length) return;
+
+            currentWeaponIdx = index;
+            const selected = WEAPONS[index];
+
+            Object.values(weaponModels).forEach(m => m.visible = false);
+            if (weaponModels[selected.modelKey]) {
+                weaponModels[selected.modelKey].visible = true;
+            }
+
+            if (selected.name === 'hands') {
+                weaponContainer.position.set(HAND_OFFSET.x, HAND_OFFSET.y, HAND_OFFSET.z);
+            } else {
+                weaponContainer.position.set(GUN_OFFSET.x, GUN_OFFSET.y, GUN_OFFSET.z);
+            }
+
+            ['w-slot-1', 'w-slot-2', 'w-slot-3'].forEach(id => {
+                 document.getElementById(id).classList.remove('active-weapon');
+            });
+            const map = { 0: 'w-slot-1', 1: 'w-slot-2', 2: 'w-slot-3' };
+            document.getElementById(map[currentWeaponIdx]).classList.add('active-weapon');
+        }
+
+        function checkShoot() {
+            if (!isLocked) return;
+            const now = Date.now();
+            const weapon = WEAPONS[currentWeaponIdx];
+
+            if (now - lastShootTime > weapon.fireRate) {
+                shoot(weapon);
+                lastShootTime = now;
+                if (weapon.auto && isMouseDown) {
+                    setTimeout(() => checkShoot(), weapon.fireRate);
+                }
+            }
+        }
+
+        function shoot(weapon) {
+            if (weapon.name !== 'hands') {
+                muzzleLight.intensity = 2;
+                setTimeout(() => muzzleLight.intensity = 0, 50);
+            }
+            const model = weaponModels[weapon.modelKey];
+            if (model) {
+                model.position.z += 0.05;
+                setTimeout(() => { model.position.z -= 0.05 }, 80);
+            }
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            raycaster.far = weapon.range;
+
+            const visibleEnemies = enemyBodies.filter(e => e.mesh.visible);
+            const enemyVisuals = visibleEnemies.map(e => e.mesh);
+            const targets = [...platforms.map(p => p.mesh), ...enemyVisuals];
+
+            const intersects = raycaster.intersectObjects(targets, true);
+
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                const enemy = enemyBodies.find(e => {
+                    let p = hit.object;
+                    while(p) {
+                        if (p === e.mesh) return true;
+                        p = p.parent;
+                    }
+                    return false;
+                });
+
+                if (enemy) {
+                    enemy.health -= 50;
+                    if (enemy.health <= 0) {
+                        enemy.mesh.visible = false;
+                        enemy.mesh.position.set(0, -500, 0);
+
+                        // Heal on kill
+                        playerHealth = Math.min(100, playerHealth + 20);
+                        updateHealthUI();
+                    }
+                }
+            }
+        }
+
+        function updateHealthUI() {
+            document.getElementById('hp-val').innerText = Math.max(0, playerHealth);
+            document.getElementById('hp-bar').style.width = Math.max(0, playerHealth) + '%';
+            document.getElementById('hp-bar').style.background = playerHealth <= 30 ? 'linear-gradient(90deg, #aa0000, #ff0000)' : 'linear-gradient(90deg, #00aa00, #00ff00)';
+        }
 
         // --- Game Logic and Animation ---
 
@@ -522,6 +769,9 @@
                     isSpacePressed = true;
                     break;
                 case 'KeyR': respawn('fall'); break; 
+                case 'Digit1': switchWeapon(0); break;
+                case 'Digit2': switchWeapon(1); break;
+                case 'Digit3': switchWeapon(2); break;
             }
         }
 
@@ -576,6 +826,18 @@
             momentum.set(0, 0, 0);
             if (playerMesh.position.y < -30) playerVelocity.set(0,0,0);
             
+            playerHealth = 100;
+            updateHealthUI();
+
+            // Cleanup enemies behind
+            enemyBodies = enemyBodies.filter(e => {
+                if (e.mesh.position.z > playerMesh.position.z + 20) {
+                    scene.remove(e.mesh);
+                    return false;
+                }
+                return true;
+            });
+
             // SFX
             if (type === 'fire') {
                 if(sfxFire) { sfxFire.currentTime = 0; sfxFire.play().catch(e => {}); }
@@ -885,6 +1147,48 @@
             checkPhysics(dt);
             updateAnimation(time);
 
+            // Enemy AI
+            const now = Date.now();
+            enemyBodies.forEach(e => {
+                if (!e.mesh.visible) return;
+                const pPos = new THREE.Vector3(playerMesh.position.x, playerMesh.position.y, playerMesh.position.z);
+                const ePos = new THREE.Vector3(e.mesh.position.x, e.mesh.position.y, e.mesh.position.z);
+                const dist = ePos.distanceTo(pPos);
+
+                if (dist < 40) {
+                    e.mesh.lookAt(pPos.x, e.mesh.position.y, pPos.z);
+                    if (now - e.lastShot > 1500) {
+                        e.lastShot = now;
+
+                        // Raycast to check line of sight
+                        const raycaster = new THREE.Raycaster();
+                        const start = new THREE.Vector3(e.mesh.position.x, e.mesh.position.y + 1.0, e.mesh.position.z);
+                        const dir = new THREE.Vector3().subVectors(new THREE.Vector3(pPos.x, pPos.y + 1.0, pPos.z), start).normalize();
+                        raycaster.set(start, dir);
+                        raycaster.far = dist;
+
+                        const intersects = raycaster.intersectObjects(platforms.map(p => p.mesh), true);
+                        if (intersects.length === 0) {
+                            // Hit player
+                            takeDamage(10);
+
+                            // Visual / Audio
+                            const flash = new THREE.PointLight(0xffff00, 2, 5);
+                            flash.position.copy(start);
+                            scene.add(flash);
+                            setTimeout(() => scene.remove(flash), 100);
+
+                            const audioLoader = new THREE.AudioLoader();
+                            const sound = new THREE.Audio(new THREE.AudioListener());
+                            audioLoader.load('/enemy_shoot.mp3', function(buffer) {
+                                sound.setBuffer(buffer);
+                                sound.setVolume(0.5);
+                                sound.play();
+                            });
+                        }
+                    }
+                }
+            });
 
             // Ensure camera update runs every frame during the active game loop
             updateCameraPosition();
