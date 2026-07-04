@@ -131,14 +131,26 @@
     <audio id="sfx-death" src="death.mp3"></audio>
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
+    <audio id="sfx-pistol" src="pistol.mp3"></audio>
 
 
-    <!-- Three.js from CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <!-- Import Maps for Modules -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+    </script>
 
 
-    <script>
+
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
         // --- Game Constants ---
         const PLAYER_HEIGHT = 1.6; 
         const PLAYER_SPEED_RUN = 0.22; 
@@ -152,9 +164,15 @@
         let camera, scene, renderer;
         let playerMesh; // Player Group (root of the character)
         let platforms = [];
+        let enemies = [];
         let clock; 
         let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
         
+        let loadedModels = {
+            pistol: null,
+            enemy: null
+        };
+
         // Physics State
         let playerVelocity = new THREE.Vector3();
         let momentum = new THREE.Vector3(); 
@@ -201,8 +219,14 @@
         const sfxDeath = document.getElementById('sfx-death');
         const sfxFire = document.getElementById('sfx-fire');
         const sfxWalk = document.getElementById('sfx-walk');
+        const sfxPistol = document.getElementById('sfx-pistol');
         
         if(sfxWalk) sfxWalk.volume = 0.4; 
+        if(sfxPistol) sfxPistol.volume = 0.5;
+
+        // Combat State
+        let lastShootTime = 0;
+        const FIRE_RATE = 400; // ms
 
         // Radio System
         const radioTracks = [
@@ -288,6 +312,23 @@
         }
 
 
+        function spawnEnemy(x, y, z) {
+            if (!loadedModels.enemy) return;
+            const enemyGroup = new THREE.Group();
+            const model = loadedModels.enemy.clone();
+
+            // Adjust position so the enemy stands on the platform
+            enemyGroup.position.set(x, y + 0.5, z);
+            enemyGroup.add(model);
+            scene.add(enemyGroup);
+
+            enemies.push({
+                mesh: enemyGroup,
+                lastShot: 0,
+                health: 100
+            });
+        }
+
         function generateRandomStage() {
             const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
             const stageColor = colors[Math.floor(Math.random() * colors.length)];
@@ -296,9 +337,7 @@
             let curY = nextStageStart.y;
             let curZ = nextStageStart.z;
 
-
             const obstaclesCount = 5 + Math.floor(Math.random() * 4); 
-
 
             for (let i = 0; i < obstaclesCount; i++) {
                 const r = Math.random();
@@ -307,7 +346,6 @@
                 const driftX = (Math.random() - 0.5) * 8; 
                 const driftY = (Math.random() - 0.4) * 2; 
 
-
                 curZ -= gap;
                 curX += driftX;
                 curY += driftY;
@@ -315,6 +353,8 @@
                 if(curX > 40) curX = 40;
                 if(curX < -40) curX = -40;
 
+                let platformSpawned = false;
+                let platformY = curY;
 
                 if (r < 0.3) {
                     const w = 3 + Math.random() * 3;
@@ -322,6 +362,7 @@
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
                     curZ -= d/2;
+                    platformSpawned = true;
                 } 
                 else if (r < 0.5) {
                     const len = 8 + Math.random() * 6;
@@ -338,6 +379,7 @@
                      curZ -= len/2;
                      createPlatform(curX, curY, curZ, 1.2, 1, len, stageColor);
                      curZ -= len/2;
+                     platformSpawned = true;
                 }
                 else {
                     const steps = 3 + Math.floor(Math.random()*3);
@@ -346,10 +388,15 @@
                         curX += (Math.random() - 0.5) * 5; 
                         curY += (Math.random() - 0.3) * 1.5; 
                         createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
+                        platformY = curY;
                     }
+                    platformSpawned = true;
+                }
+
+                if (platformSpawned && Math.random() < 0.4) {
+                     spawnEnemy(curX, platformY, curZ + 1); // Spawn slightly offset
                 }
             }
-
 
             curZ -= 4;
             createPlatform(curX, curY, curZ - 3, 8, 1, 6, 0x00FF00, 'checkpoint');
@@ -359,7 +406,6 @@
             const pole = new THREE.Mesh(geo, mat);
             pole.position.set(curX + 3, curY + 2.5, curZ - 3);
             scene.add(pole);
-
 
             nextStageStart.set(curX, curY, curZ - 6);
         }
@@ -426,7 +472,10 @@
             // 5. Create Player (Original Blocky)
             createPlayer();
 
-            // 6. Create Initial Level
+            // 6. Load Models
+            loadModels();
+
+            // 7. Create Initial Level
             createPlatform(0, 0, 0, 10, 1, 10, 0xaaaaaa, 'spawn'); 
             nextStageStart.set(0, 0, -5); 
             generateRandomStage();
@@ -449,6 +498,7 @@
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
             document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mousedown', onMouseDown);
 
             // --- Camera Snap Fix ---
             updateCameraPosition();
@@ -458,6 +508,26 @@
 
 
         // --- Player Creation (Original Blocky) ---
+
+        function loadModels() {
+            const loader = new GLTFLoader();
+            loader.load('pistol.glb', (gltf) => {
+                const pistol = gltf.scene;
+                pistol.scale.set(0.1, 0.1, 0.1);
+                pistol.position.set(0.5, 0, -0.5); // Position relative to player
+                pistol.rotation.y = Math.PI / 2;
+                loadedModels.pistol = pistol;
+                if (playerMesh && playerMesh.userData.model) {
+                    playerMesh.userData.model.add(pistol);
+                }
+            });
+
+            loader.load('enemy.glb', (gltf) => {
+                const enemy = gltf.scene;
+                enemy.scale.set(0.06, 0.06, 0.06);
+                loadedModels.enemy = enemy;
+            });
+        }
 
         function createPlayer() {
             const group = new THREE.Group();
@@ -475,6 +545,9 @@
 
             group.add(model);
             group.userData.model = model;
+            if (loadedModels.pistol) {
+                model.add(loadedModels.pistol);
+            }
             isPlayerLoaded = true;
         }
 
@@ -566,6 +639,58 @@
             euler.x -= movementY * 0.002;
             const limit = Math.PI / 2 - 0.1;
             euler.x = Math.max(-limit, Math.min(limit, euler.x));
+        }
+
+        function onMouseDown(event) {
+            if (!isLocked || !playerMesh || !loadedModels.pistol) return;
+            const now = Date.now();
+            if (now - lastShootTime < FIRE_RATE) return;
+            lastShootTime = now;
+
+            // Recoil Animation
+            const pistol = loadedModels.pistol;
+            pistol.position.z += 0.05;
+            setTimeout(() => { pistol.position.z -= 0.05 }, 80);
+
+            // SFX
+            if(sfxPistol) {
+                sfxPistol.currentTime = 0;
+                sfxPistol.play().catch(e => {});
+            }
+
+            // Raycast
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+            // Filter visible enemies
+            const visibleEnemies = enemies.map(e => e.mesh);
+            const intersects = raycaster.intersectObjects(visibleEnemies, true);
+
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                const enemy = enemies.find(e => {
+                    let p = hit.object;
+                    while(p) {
+                        if (p === e.mesh) return true;
+                        p = p.parent;
+                    }
+                    return false;
+                });
+
+                if (enemy && enemy.health > 0) {
+                    enemy.health -= 50;
+                    if (enemy.health <= 0) {
+                        enemy.mesh.visible = false;
+                    }
+                }
+            }
+
+            // Muzzle Flash
+            const muzzleFlash = new THREE.PointLight(0xffff00, 2, 5);
+            muzzleFlash.position.copy(playerMesh.position);
+            muzzleFlash.position.y += 0.5;
+            scene.add(muzzleFlash);
+            setTimeout(() => scene.remove(muzzleFlash), 50);
         }
 
 
@@ -885,6 +1010,44 @@
             checkPhysics(dt);
             updateAnimation(time);
 
+            // --- Enemy AI ---
+            const now = Date.now();
+            enemies.forEach((enemy) => {
+                if (!enemy.mesh.visible || enemy.health <= 0) return;
+
+                // Look at player
+                enemy.mesh.lookAt(playerMesh.position.x, enemy.mesh.position.y, playerMesh.position.z);
+
+                // Calculate distance
+                const dist = enemy.mesh.position.distanceTo(playerMesh.position);
+
+                // Shoot if close enough and line of sight is clear
+                if (dist < 20 && now - enemy.lastShot > 1500) {
+                    enemy.lastShot = now;
+
+                    const dir = new THREE.Vector3().subVectors(playerMesh.position, enemy.mesh.position).normalize();
+                    const raycaster = new THREE.Raycaster(enemy.mesh.position, dir);
+
+                    // Simple line of sight check against platforms
+                    const platformMeshes = platforms.map(p => p.mesh);
+                    const intersects = raycaster.intersectObjects(platformMeshes);
+
+                    if (intersects.length === 0 || intersects[0].distance > dist) {
+                        // Visual tracer
+                        const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+                        const points = [enemy.mesh.position.clone(), playerMesh.position.clone()];
+                        points[0].y += 1; // Muzzle height
+                        points[1].y += 0.5; // Aim at chest
+                        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                        const line = new THREE.Line(geometry, material);
+                        scene.add(line);
+                        setTimeout(() => scene.remove(line), 100);
+
+                        // Hit player
+                        respawn('fire');
+                    }
+                }
+            });
 
             // Ensure camera update runs every frame during the active game loop
             updateCameraPosition();
