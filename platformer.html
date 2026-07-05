@@ -131,6 +131,8 @@
     <audio id="sfx-death" src="death.mp3"></audio>
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
+    <audio id="sfx-pistol" src="pistol.mp3"></audio>
+    <audio id="sfx-enemy-shoot" src="enemy_shoot.mp3"></audio>
 
 
     <!-- Three.js from CDN -->
@@ -152,6 +154,8 @@
         let camera, scene, renderer;
         let playerMesh; // Player Group (root of the character)
         let platforms = [];
+        let enemies = [];
+        let enemyModel;
         let clock; 
         let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
         
@@ -201,6 +205,8 @@
         const sfxDeath = document.getElementById('sfx-death');
         const sfxFire = document.getElementById('sfx-fire');
         const sfxWalk = document.getElementById('sfx-walk');
+        const sfxPistol = document.getElementById('sfx-pistol');
+        const sfxEnemyShoot = document.getElementById('sfx-enemy-shoot');
         
         if(sfxWalk) sfxWalk.volume = 0.4; 
 
@@ -321,6 +327,11 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+
+                    if (Math.random() < 0.4 && enemyModel) {
+                        spawnEnemy(curX, curY + 0.5, curZ);
+                    }
+
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -390,8 +401,41 @@
         }
 
         
+        // --- Enemy Spawning ---
+        function spawnEnemy(x, y, z) {
+            if (!enemyModel) return;
+            const enemyGroup = new THREE.Group();
+            const clonedMesh = enemyModel.clone();
+            enemyGroup.add(clonedMesh);
+            enemyGroup.position.set(x, y, z);
+            scene.add(enemyGroup);
+
+            // Add a hit box for raycasting
+            const hitGeometry = new THREE.BoxGeometry(0.8, 1.8, 0.8);
+            const hitMaterial = new THREE.MeshBasicMaterial({ visible: false });
+            const hitBox = new THREE.Mesh(hitGeometry, hitMaterial);
+            hitBox.position.y = 0.9;
+            hitBox.userData.isEnemy = true;
+            enemyGroup.add(hitBox);
+
+            enemies.push({
+                mesh: enemyGroup,
+                health: 100,
+                lastShot: 0,
+                active: true
+            });
+        }
+
         // --- Core Initialization ---
         function init() {
+            const manager = new THREE.LoadingManager();
+            const gltfLoader = new THREE.GLTFLoader(manager);
+            gltfLoader.load('enemy.glb', (gltf) => {
+                enemyModel = gltf.scene;
+                enemyModel.scale.set(0.06, 0.06, 0.06);
+                enemyModel.traverse(child => { if(child.isMesh) child.castShadow = true; });
+            });
+
             clock = new THREE.Clock();
 
             // 1. Scene Setup
@@ -449,6 +493,7 @@
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
             document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mousedown', onMouseDown);
 
             // --- Camera Snap Fix ---
             updateCameraPosition();
@@ -481,6 +526,55 @@
 
 
         // --- Game Logic and Animation ---
+
+        function updateEnemies(time) {
+            const now = Date.now();
+            enemies.forEach(enemy => {
+                if (!enemy.active || !enemy.mesh.visible || enemy.health <= 0) return;
+
+                const dist = enemy.mesh.position.distanceTo(playerMesh.position);
+
+                // If player is within range
+                if (dist < 20) {
+                    // Face the player
+                    enemy.mesh.lookAt(playerMesh.position.x, enemy.mesh.position.y, playerMesh.position.z);
+
+                    // Shoot every 1.5 seconds
+                    if (now - enemy.lastShot > 1500) {
+                        enemy.lastShot = now;
+
+                        // Play enemy shoot sound
+                        if (sfxEnemyShoot) {
+                            sfxEnemyShoot.currentTime = 0;
+                            sfxEnemyShoot.play().catch(e => {});
+                        }
+
+                        // Raycast to check if player is hit
+                        const raycaster = new THREE.Raycaster();
+                        const startPos = enemy.mesh.position.clone();
+                        startPos.y += 0.5; // Shoot from slightly above origin
+                        const dir = new THREE.Vector3().subVectors(playerMesh.position, startPos).normalize();
+                        raycaster.set(startPos, dir);
+                        raycaster.far = 25;
+
+                        // Add visual tracer
+                        const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+                        const endPos = startPos.clone().add(dir.multiplyScalar(20));
+                        const points = [startPos, endPos];
+                        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                        const line = new THREE.Line(geometry, material);
+                        scene.add(line);
+                        setTimeout(() => scene.remove(line), 100);
+
+                        const intersects = raycaster.intersectObjects([playerMesh], true);
+                        if (intersects.length > 0) {
+                            // Player hit
+                            respawn('enemy');
+                        }
+                    }
+                }
+            });
+        }
 
 
         function updateAnimation(time) {
@@ -566,6 +660,59 @@
             euler.x -= movementY * 0.002;
             const limit = Math.PI / 2 - 0.1;
             euler.x = Math.max(-limit, Math.min(limit, euler.x));
+        }
+
+        function onMouseDown(event) {
+            if (!isLocked) return;
+            if (event.button !== 0) return; // Only trigger on left click
+
+            // Play shoot sound
+            if (sfxPistol) {
+                sfxPistol.currentTime = 0;
+                sfxPistol.play().catch(e => {});
+            }
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            raycaster.far = 100;
+
+            const targets = [];
+            // Collect enemy meshes to check for hits
+            if (typeof enemies !== 'undefined') {
+                enemies.forEach(enemy => {
+                    if (enemy.mesh && enemy.mesh.visible && enemy.health > 0) {
+                        targets.push(enemy.mesh);
+                    }
+                });
+            }
+
+            if (targets.length > 0) {
+                const intersects = raycaster.intersectObjects(targets, true);
+                if (intersects.length > 0) {
+                    const hit = intersects[0];
+                    let obj = hit.object;
+                    let hitEnemy = null;
+
+                    // Traverse up to find the root enemy group
+                    while (obj) {
+                        if (obj.userData && obj.userData.isEnemy) {
+                            hitEnemy = enemies.find(e => e.mesh === obj.parent);
+                            break;
+                        }
+                        obj = obj.parent;
+                    }
+
+                    if (hitEnemy) {
+                        hitEnemy.health -= 50; // Arbitrary damage
+                        if (hitEnemy.health <= 0) {
+                            hitEnemy.mesh.visible = false;
+                        }
+                    }
+                }
+            }
+
+            // Adding a small visual recoil to the camera
+            euler.x += 0.05;
         }
 
 
@@ -884,6 +1031,7 @@
 
             checkPhysics(dt);
             updateAnimation(time);
+            updateEnemies(time);
 
 
             // Ensure camera update runs every frame during the active game loop
