@@ -402,23 +402,19 @@
         });
         world.addContactMaterial(physicsContact);
 
-        // 3. Floor
-        const groundShape = new CANNON.Plane();
-        const groundBody = new CANNON.Body({ mass: 0, material: slipperyMat });
-        groundBody.addShape(groundShape);
-        groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0); 
-        world.addBody(groundBody);
-
         // 4. Player Setup
         setupPlayer();
 
         // 5. Controls
         controls = new PointerLockControls(camera, document.body);
-        document.body.addEventListener('click', (e) => {
+        document.body.addEventListener('mousedown', (e) => {
             if (!gameStarted) return;
             if (e.target.closest('#radio-container') || e.target.closest('#leaderboard-modal') || e.target.closest('#start-screen')) return; 
+
+            e.preventDefault(); // Prevent text selection and mouse skipping
+
             if(!controls.isLocked && !isGameOver) {
-                controls.lock();
+                document.body.requestPointerLock();
                 // Resume Audio Context on interaction
                 if (audioListener.context.state === 'suspended') {
                     audioListener.context.resume();
@@ -527,36 +523,44 @@
 
         const gltfLoader = new GLTFLoader(manager);
 
-        // Map
-        gltfLoader.load(ASSETS.map, (gltf) => {
-            const model = gltf.scene;
-            scene.add(model);
-            model.updateMatrixWorld(true);
+        // Procedural Map Generation
+        function createBox(w, h, d, x, y, z, color) {
+            const geometry = new THREE.BoxGeometry(w, h, d);
+            const material = new THREE.MeshStandardMaterial({ color: color, roughness: 0.8, metalness: 0.2 });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.userData.isMap = true;
+            scene.add(mesh);
+            mapMeshes.push(mesh);
 
-            model.traverse(child => {
-                if(child.isMesh) {
-                    child.receiveShadow = true;
-                    child.castShadow = true;
-                    child.userData.isMap = true;
-                    mapMeshes.push(child);
+            const shape = new CANNON.Box(new CANNON.Vec3(w / 2, h / 2, d / 2));
+            const body = new CANNON.Body({ mass: 0, material: slipperyMat });
+            body.addShape(shape);
+            body.position.set(x, y, z);
+            world.addBody(body);
+            return mesh;
+        }
 
-                    const geometry = child.geometry.clone();
-                    geometry.applyMatrix4(child.matrixWorld);
-                    const positions = geometry.attributes.position.array;
-                    let indices;
-                    if (geometry.index) indices = geometry.index.array;
-                    else {
-                        indices = new Uint32Array(positions.length / 3);
-                        for(let i=0; i<indices.length; i++) indices[i] = i;
-                    }
+        // Generate map
+        createBox(200, 2, 200, 0, -1, 0, 0x333333); // Floor
+        for (let i = 0; i < 40; i++) {
+            const w = 2 + Math.random() * 8;
+            const h = 2 + Math.random() * 8;
+            const d = 2 + Math.random() * 8;
+            const x = (Math.random() - 0.5) * 160;
+            const z = (Math.random() - 0.5) * 160;
+            // Leave center clear for spawn
+            if (Math.abs(x) < 15 && Math.abs(z) < 15) continue;
+            createBox(w, h, d, x, h / 2 - 1, z, 0x555555);
+        }
 
-                    const shape = new CANNON.Trimesh(positions, indices);
-                    const body = new CANNON.Body({ mass: 0, material: slipperyMat });
-                    body.addShape(shape);
-                    world.addBody(body);
-                }
-            });
-        });
+        // Boundaries
+        createBox(200, 10, 2, 0, 4, -100, 0x222222);
+        createBox(200, 10, 2, 0, 4, 100, 0x222222);
+        createBox(2, 10, 200, -100, 4, 0, 0x222222);
+        createBox(2, 10, 200, 100, 4, 0, 0x222222);
 
         // Weapons
         weaponContainer = new THREE.Group();
@@ -640,7 +644,7 @@
         const down = new THREE.Vector3(0, -1, 0);
         const up = new THREE.Vector3(0, 1, 0);
         
-        const playerPos = new THREE.Vector3().copy(physicsBody.position);
+        const playerPos = new THREE.Vector3(physicsBody.position.x, physicsBody.position.y, physicsBody.position.z);
         
         for(let i=0; i<50; i++) {
             // Spawn in a donut shape around the player (radius 15 to 45)
@@ -910,11 +914,11 @@
 
     function enemyShoot(enemy) {
         if (isGameOver) return;
-        const startCannon = enemy.body.position.clone();
+        const startCannon = new CANNON.Vec3(enemy.body.position.x, enemy.body.position.y, enemy.body.position.z);
         startCannon.y += 1.5;
-        const endCannon = physicsBody.position.clone();
-        const start = new THREE.Vector3().copy(startCannon);
-        const end = new THREE.Vector3().copy(endCannon);
+        const endCannon = new CANNON.Vec3(physicsBody.position.x, physicsBody.position.y, physicsBody.position.z);
+        const start = new THREE.Vector3(startCannon.x, startCannon.y, startCannon.z);
+        const end = new THREE.Vector3(endCannon.x, endCannon.y, endCannon.z);
         end.y += 1.0; // Aim at player's chest, not feet
         const direction = new THREE.Vector3().subVectors(end, start).normalize();
         
@@ -1116,7 +1120,7 @@
             }
         }
 
-        camera.position.copy(physicsBody.position);
+        camera.position.set(physicsBody.position.x, physicsBody.position.y, physicsBody.position.z);
         camera.position.y += 0.6;
         
         // Player out of bounds reset
@@ -1157,15 +1161,15 @@
                      return;
                  }
 
-                 e.debugMesh.position.copy(e.body.position);
-                 e.debugMesh.quaternion.copy(e.body.quaternion);
+                 e.debugMesh.position.set(e.body.position.x, e.body.position.y, e.body.position.z);
+                 e.debugMesh.quaternion.set(e.body.quaternion.x, e.body.quaternion.y, e.body.quaternion.z, e.body.quaternion.w);
 
-                 e.mesh.position.copy(e.body.position);
+                 e.mesh.position.set(e.body.position.x, e.body.position.y, e.body.position.z);
                  e.mesh.position.y -= 0.9;
-                 e.mesh.quaternion.copy(e.body.quaternion);
+                 e.mesh.quaternion.set(e.body.quaternion.x, e.body.quaternion.y, e.body.quaternion.z, e.body.quaternion.w);
 
                  if (!isGameOver) {
-                    const dist = new THREE.Vector3().copy(e.body.position).distanceTo(new THREE.Vector3().copy(physicsBody.position));
+                    const dist = new THREE.Vector3(e.body.position.x, e.body.position.y, e.body.position.z).distanceTo(new THREE.Vector3(physicsBody.position.x, physicsBody.position.y, physicsBody.position.z));
                     
                     // Look at player
                     e.mesh.lookAt(camera.position.x, e.mesh.position.y, camera.position.z);
@@ -1181,7 +1185,7 @@
                     if (now - e.spawnTime > 1000) {
                         if (dist >= 17) {
                             // Move towards player
-                            const dir = new THREE.Vector3().subVectors(new THREE.Vector3().copy(physicsBody.position), new THREE.Vector3().copy(e.body.position));
+                            const dir = new THREE.Vector3().subVectors(new THREE.Vector3(physicsBody.position.x, physicsBody.position.y, physicsBody.position.z), new THREE.Vector3(e.body.position.x, e.body.position.y, e.body.position.z));
                             dir.y = 0;
                             if (dir.lengthSq() > 0) {
                                 dir.normalize();
@@ -1190,7 +1194,7 @@
                             }
                         } else if (dist >= 11 && dist <= 13) {
                             // Back up
-                            const dir = new THREE.Vector3().subVectors(new THREE.Vector3().copy(e.body.position), new THREE.Vector3().copy(physicsBody.position));
+                            const dir = new THREE.Vector3().subVectors(new THREE.Vector3(e.body.position.x, e.body.position.y, e.body.position.z), new THREE.Vector3(physicsBody.position.x, physicsBody.position.y, physicsBody.position.z));
                             dir.y = 0;
                             if (dir.lengthSq() > 0) {
                                 dir.normalize();
