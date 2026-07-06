@@ -131,11 +131,14 @@
     <audio id="sfx-death" src="death.mp3"></audio>
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
+    <audio id="sfx-akm" src="akm.mp3"></audio>
+    <audio id="sfx-ding" src="ding.mp3"></audio>
 
 
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
 
     <script>
@@ -151,6 +154,11 @@
         // --- Global Variables ---
         let camera, scene, renderer;
         let playerMesh; // Player Group (root of the character)
+        let weaponModel;
+        let enemyModel;
+        let enemies = [];
+        let bullets = [];
+        let lastShootTime = 0;
         let platforms = [];
         let clock; 
         let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
@@ -201,6 +209,12 @@
         const sfxDeath = document.getElementById('sfx-death');
         const sfxFire = document.getElementById('sfx-fire');
         const sfxWalk = document.getElementById('sfx-walk');
+        const sfxAkm = document.getElementById('sfx-akm');
+        const sfxDing = document.getElementById('sfx-ding');
+
+        // Add pos audio listener setup later in init
+        let audioListener;
+        let enemyShootBuffer;
         
         if(sfxWalk) sfxWalk.volume = 0.4; 
 
@@ -288,6 +302,24 @@
         }
 
 
+        function spawnEnemy(x, y, z) {
+            if (!enemyModel) return;
+            const enemy = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(enemyModel) : enemyModel.clone();
+            enemy.scale.set(0.05, 0.05, 0.05);
+            enemy.position.set(x, y, z);
+
+            const sound = new THREE.PositionalAudio(audioListener);
+            enemy.add(sound);
+
+            scene.add(enemy);
+            enemies.push({
+                mesh: enemy,
+                sound: sound,
+                lastShot: 0,
+                health: 100
+            });
+        }
+
         function generateRandomStage() {
             const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
             const stageColor = colors[Math.floor(Math.random() * colors.length)];
@@ -321,6 +353,7 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    if (Math.random() > 0.5) spawnEnemy(curX, curY + 1.5, curZ);
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -337,6 +370,7 @@
                      const len = 6 + Math.random() * 6;
                      curZ -= len/2;
                      createPlatform(curX, curY, curZ, 1.2, 1, len, stageColor);
+                     if (Math.random() > 0.5) spawnEnemy(curX, curY + 1.5, curZ);
                      curZ -= len/2;
                 }
                 else {
@@ -353,6 +387,7 @@
 
             curZ -= 4;
             createPlatform(curX, curY, curZ - 3, 8, 1, 6, 0x00FF00, 'checkpoint');
+            if (Math.random() > 0.3) spawnEnemy(curX, curY + 1.5, curZ - 3);
             
             const geo = new THREE.CylinderGeometry(0.5, 0.5, 5);
             const mat = new THREE.MeshBasicMaterial({color: 0xffff00});
@@ -431,11 +466,35 @@
             nextStageStart.set(0, 0, -5); 
             generateRandomStage();
 
+            // 6.5. Audio Listener & Models
+            audioListener = new THREE.AudioListener();
+            camera.add(audioListener);
+
+            const audioLoader = new THREE.AudioLoader();
+            audioLoader.load('enemy_shoot.mp3', function(buffer) {
+                enemyShootBuffer = buffer;
+            });
+
+            const gltfLoader = new THREE.GLTFLoader();
+            gltfLoader.load('akm.glb', (gltf) => {
+                weaponModel = gltf.scene;
+                weaponModel.scale.set(0.1, 0.1, 0.1);
+                weaponModel.rotation.y = Math.PI / 2;
+                weaponModel.position.set(0.25, -0.2, -0.5);
+                camera.add(weaponModel); // Attach to camera
+            });
+
+            gltfLoader.load('enemy.glb', (gltf) => {
+                enemyModel = gltf.scene;
+                // Add bounding box for raycasting? The children meshes will work.
+            });
+
             // 7. Event Listeners
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
             document.addEventListener('wheel', onScroll); 
             window.addEventListener('resize', onWindowResize);
+            document.addEventListener('mousedown', onMouseDown);
             
             instructions.addEventListener('click', function() {
                 if(sfxJump) { 
@@ -568,6 +627,56 @@
             euler.x = Math.max(-limit, Math.min(limit, euler.x));
         }
 
+        function onMouseDown(event) {
+            if (!isLocked) return;
+            if (event.button !== 0) return; // Left click only
+
+            const now = Date.now();
+            if (now - lastShootTime < 100) return; // Fire rate limit
+
+            if (sfxAkm) {
+                sfxAkm.currentTime = 0;
+                sfxAkm.play().catch(e => {});
+            }
+
+            // Visual recoil
+            if (weaponModel) {
+                weaponModel.position.z += 0.05;
+                setTimeout(() => {
+                    if (weaponModel) weaponModel.position.z -= 0.05;
+                }, 50);
+            }
+
+            lastShootTime = now;
+
+            // Raycast
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+            const enemyMeshes = enemies.filter(e => e.mesh.visible).map(e => e.mesh);
+            const intersects = raycaster.intersectObjects(enemyMeshes, true);
+
+            if (intersects.length > 0) {
+                // Find parent enemy group
+                let hitObject = intersects[0].object;
+                while (hitObject.parent && hitObject.parent.type !== 'Scene' && !enemies.find(e => e.mesh === hitObject)) {
+                    hitObject = hitObject.parent;
+                }
+
+                const enemyObj = enemies.find(e => e.mesh === hitObject);
+                if (enemyObj) {
+                    enemyObj.health -= 50;
+                    if (enemyObj.health <= 0) {
+                        enemyObj.mesh.visible = false;
+                        if (sfxDing) {
+                            sfxDing.currentTime = 0;
+                            sfxDing.play().catch(e => {});
+                        }
+                    }
+                }
+            }
+        }
+
 
         // --- Physics Loop ---
         function respawn(type) {
@@ -576,6 +685,12 @@
             momentum.set(0, 0, 0);
             if (playerMesh.position.y < -30) playerVelocity.set(0,0,0);
             
+            // Reset enemies
+            enemies.forEach(e => {
+                if(e.mesh) e.mesh.visible = true;
+                e.health = 100;
+            });
+
             // SFX
             if (type === 'fire') {
                 if(sfxFire) { sfxFire.currentTime = 0; sfxFire.play().catch(e => {}); }
@@ -884,6 +999,33 @@
 
             checkPhysics(dt);
             updateAnimation(time);
+
+            // Enemy update loop
+            const now = Date.now();
+            enemies.forEach(enemy => {
+                if (!enemy.mesh.visible) return;
+
+                const dist = enemy.mesh.position.distanceTo(playerMesh.position);
+                enemy.mesh.lookAt(playerMesh.position.x, enemy.mesh.position.y, playerMesh.position.z);
+
+                if (dist < 20 && now - enemy.lastShot > 1500) {
+                    // Shoot raycast
+                    const dir = new THREE.Vector3().subVectors(playerMesh.position, enemy.mesh.position).normalize();
+                    const raycaster = new THREE.Raycaster(enemy.mesh.position, dir);
+                    // Minimal collision check (just distance for now)
+                    if (dist < 15) {
+                        respawn('fall'); // Player hit
+                    }
+
+                    if (enemyShootBuffer && enemy.sound) {
+                        if (enemy.sound.isPlaying) enemy.sound.stop();
+                        enemy.sound.setBuffer(enemyShootBuffer);
+                        enemy.sound.setRefDistance(5);
+                        enemy.sound.play();
+                    }
+                    enemy.lastShot = now;
+                }
+            });
 
 
             // Ensure camera update runs every frame during the active game loop
