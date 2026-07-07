@@ -139,6 +139,27 @@
 
 
     <script>
+
+        // --- Enemy System ---
+        const ENEMY_SCALE = 0.05;
+        let enemyModel = null;
+        let activeEnemies = [];
+
+        // --- Gun / Combat System ---
+        const WEAPON_SCALE = 0.1;
+        let weaponModel = null;
+        let weaponContainer = null;
+        let muzzleLight = null;
+        const GUN_OFFSET = { x: 0.25, y: -0.5, z: -0.6 };
+        const WEAPON_ROTATION_Y = 1.57;
+        let lastShootTime = 0;
+        let isMouseDown = false;
+
+        // Audio
+        let audioListener = null;
+        let sfxAkm = null;
+        let sfxEnemy = null;
+
         // --- Game Constants ---
         const PLAYER_HEIGHT = 1.6; 
         const PLAYER_SPEED_RUN = 0.22; 
@@ -321,6 +342,25 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+
+                    // Maybe spawn enemy
+                    if (Math.random() < 0.5 && enemyModel) {
+                        const enemy = enemyModel.clone();
+                        enemy.position.set(curX, curY + 0.5, curZ);
+                        scene.add(enemy);
+
+                        const sound = new THREE.PositionalAudio(audioListener);
+                        enemy.add(sound);
+
+                        activeEnemies.push({
+                            mesh: enemy,
+                            lastShot: Date.now() + Math.random() * 1000,
+                            sound: sound,
+                            platform: platforms[platforms.length - 1],
+                            health: 100
+                        });
+                    }
+
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -386,7 +426,7 @@
             
             const camOffset = new THREE.Vector3(xOffset, 2 + yDist, zDist);
             camOffset.applyEuler(euler);
-            camera.position.copy(playerMesh.position).add(camOffset);
+            camera.position.set(playerMesh.position.x, playerMesh.position.y, playerMesh.position.z).add(camOffset);
         }
 
         
@@ -407,6 +447,38 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
             document.body.appendChild(renderer.domElement);
+
+
+            // Audio setup
+            audioListener = new THREE.AudioListener();
+            camera.add(audioListener);
+
+            const audioLoader = new THREE.AudioLoader();
+            audioLoader.load('akm.mp3', (buffer) => { sfxAkm = buffer; });
+            audioLoader.load('enemy_shoot.mp3', (buffer) => { sfxEnemy = buffer; });
+
+            const gltfLoader = new THREE.GLTFLoader();
+            gltfLoader.load('enemy.glb', (gltf) => {
+                enemyModel = gltf.scene;
+                enemyModel.scale.set(ENEMY_SCALE, ENEMY_SCALE, ENEMY_SCALE);
+                enemyModel.traverse(c => { if(c.isMesh) { c.castShadow = true; c.receiveShadow = true; }});
+            });
+
+            weaponContainer = new THREE.Group();
+            camera.add(weaponContainer);
+            scene.add(camera);
+
+            muzzleLight = new THREE.PointLight(0xffff00, 0, 5);
+            muzzleLight.position.set(0, 0.2, -1);
+            weaponContainer.add(muzzleLight);
+
+            gltfLoader.load('akm.glb', (gltf) => {
+                weaponModel = gltf.scene;
+                weaponModel.scale.set(WEAPON_SCALE, WEAPON_SCALE, WEAPON_SCALE);
+                weaponModel.rotation.y = WEAPON_ROTATION_Y;
+                weaponContainer.add(weaponModel);
+                weaponContainer.position.set(GUN_OFFSET.x, GUN_OFFSET.y, GUN_OFFSET.z);
+            });
 
             // 4. Lighting
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -435,9 +507,16 @@
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
             document.addEventListener('wheel', onScroll); 
+
+            document.addEventListener('mousedown', (e) => {
+                if(!isLocked) return;
+                isMouseDown = true;
+            });
+            document.addEventListener('mouseup', () => { isMouseDown = false; });
             window.addEventListener('resize', onWindowResize);
             
-            instructions.addEventListener('click', function() {
+            instructions.addEventListener('mousedown', function(e) {
+                e.preventDefault();
                 if(sfxJump) { 
                     sfxJump.play().then(() => {
                         sfxJump.pause();
@@ -461,7 +540,7 @@
 
         function createPlayer() {
             const group = new THREE.Group();
-            group.position.copy(spawnPoint);
+            group.position.set(spawnPoint.x, spawnPoint.y, spawnPoint.z);
             scene.add(group);
             playerMesh = group;
 
@@ -479,6 +558,58 @@
         }
 
 
+
+
+        function checkShoot() {
+            if (!isLocked) return;
+            const now = Date.now();
+
+            if (isMouseDown && now - lastShootTime > 100) {
+                lastShootTime = now;
+
+                // Visuals
+                muzzleLight.intensity = 2;
+                setTimeout(() => muzzleLight.intensity = 0, 50);
+                if (weaponModel) {
+                    weaponModel.position.z += 0.05;
+                    setTimeout(() => { weaponModel.position.z -= 0.05 }, 80);
+                }
+                if (sfxAkm) {
+                    const sound = new THREE.Audio(audioListener);
+                    sound.setBuffer(sfxAkm);
+                    sound.setVolume(0.5);
+                    sound.play();
+                }
+
+                // Raycast
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                raycaster.far = 100;
+
+                const enemyMeshes = activeEnemies.map(e => e.mesh);
+                const intersects = raycaster.intersectObjects(enemyMeshes, true);
+
+                if (intersects.length > 0) {
+                    const hit = intersects[0];
+                    const enemyObj = activeEnemies.find(e => {
+                        let p = hit.object;
+                        while(p) {
+                            if (p === e.mesh) return true;
+                            p = p.parent;
+                        }
+                        return false;
+                    });
+
+                    if (enemyObj) {
+                        enemyObj.health -= 50;
+                        if (enemyObj.health <= 0) {
+                            scene.remove(enemyObj.mesh);
+                            activeEnemies = activeEnemies.filter(e => e !== enemyObj);
+                        }
+                    }
+                }
+            }
+        }
 
         // --- Game Logic and Animation ---
 
@@ -571,7 +702,7 @@
 
         // --- Physics Loop ---
         function respawn(type) {
-            playerMesh.position.copy(spawnPoint);
+            playerMesh.position.set(spawnPoint.x, spawnPoint.y, spawnPoint.z);
             playerVelocity.set(0, 0, 0);
             momentum.set(0, 0, 0);
             if (playerMesh.position.y < -30) playerVelocity.set(0,0,0);
@@ -640,14 +771,14 @@
                 climbNormal.set(0, 0, 1);
             }
             
-            playerMesh.position.copy(climbStartPos);
+            playerMesh.position.set(climbStartPos.x, climbStartPos.y, climbStartPos.z);
         }
 
         function checkPhysics(dt) {
             // Climbing Physics
             if (isClimbing) {
                 if (climbPhase === 0) {
-                    playerMesh.position.copy(climbStartPos); 
+                    playerMesh.position.set(climbStartPos.x, climbStartPos.y, climbStartPos.z);
                     
                     if (isSpacePressed) {
                         isClimbing = false;
@@ -685,7 +816,7 @@
                         const t = climbTimer / 0.4;
                         playerMesh.position.lerpVectors(climbStartPos, climbTargetPos, t);
                     } else {
-                        playerMesh.position.copy(climbTargetPos);
+                        playerMesh.position.set(climbTargetPos.x, climbTargetPos.y, climbTargetPos.z);
                         isClimbing = false;
                         isGrounded = true;
                     }
@@ -879,11 +1010,53 @@
             momentum.multiplyScalar(0.94); 
 
 
+
             if (!isClimbing) playerMesh.position.y += playerVelocity.y * timeScale;
 
 
             checkPhysics(dt);
+            checkShoot();
+
+            // Enemy Logic
+            const now = Date.now();
+            activeEnemies.forEach(e => {
+                e.mesh.lookAt(camera.position.x, e.mesh.position.y, camera.position.z);
+                const dist = playerMesh.position.distanceTo(e.mesh.position);
+
+                if (dist < 20 && now > e.lastShot) {
+                    e.lastShot = now + 1000 + Math.random() * 1000; // Shoot every 1-2s
+
+                    // Raycast to player (removed unused raycaster)
+
+                    // Simple check if player is hit
+                    if (dist < 15) {
+                        // Enemy shoots
+                        if (sfxEnemy && e.sound) {
+                            if (e.sound.isPlaying) e.sound.stop();
+                            e.sound.setBuffer(sfxEnemy);
+                            e.sound.setRefDistance(5);
+                            e.sound.play();
+                        }
+
+                        // Tracer
+                        const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+                        const points = [e.mesh.position.clone(), camera.position.clone().add(new THREE.Vector3(0, -0.5, 0))];
+                        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                        const line = new THREE.Line(geometry, material);
+                        scene.add(line);
+                        setTimeout(() => {
+                            scene.remove(line);
+                            geometry.dispose();
+                            material.dispose();
+                        }, 100);
+
+                        respawn('fire'); // damage/kill player
+                    }
+                }
+            });
+
             updateAnimation(time);
+
 
 
             // Ensure camera update runs every frame during the active game loop
