@@ -34,6 +34,22 @@
             z-index: 998; 
         }
         
+        #health-ui {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #ff3333;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            pointer-events: none;
+            font-weight: bold;
+            font-size: 24px;
+            text-shadow: 1px 1px 0 #000;
+            border-left: 4px solid #ff3333;
+            z-index: 998;
+        }
+
         #blocker {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -100,6 +116,7 @@
 
 
     <div id="info">Stage: <span id="stage-display">1</span></div>
+    <div id="health-ui">HP: <span id="hp-display">100</span></div>
     <div id="checkpoint-msg">CHECKPOINT! NEXT LEVEL GENERATED</div>
     <div id="crosshair"></div>
 
@@ -131,11 +148,14 @@
     <audio id="sfx-death" src="death.mp3"></audio>
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
+    <audio id="sfx-pistol" src="pistol.mp3"></audio>
+    <audio id="sfx-enemy-shoot" src="enemy_shoot.mp3"></audio>
 
 
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
 
     <script>
@@ -155,6 +175,10 @@
         let clock; 
         let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
         
+        // Combat State
+        let playerHealth = 100;
+        let loadedModels = {};
+
         // Physics State
         let playerVelocity = new THREE.Vector3();
         let momentum = new THREE.Vector3(); 
@@ -182,6 +206,7 @@
         let moveRight = false;
         let isShiftPressed = false;
         let isSpacePressed = false;
+        let isMouseDown = false;
         
         // Camera State
         let euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -263,6 +288,90 @@
 
         init();
         
+
+        // --- Combat Functions ---
+        let weaponContainer;
+        let muzzleLight;
+        let lastShootTime = 0;
+        let activeEnemies = [];
+
+        function attachWeapon() {
+            if (!loadedModels.pistol) return;
+            weaponContainer = new THREE.Group();
+            camera.add(weaponContainer);
+            scene.add(camera);
+
+            muzzleLight = new THREE.PointLight(0xffff00, 0, 5);
+            muzzleLight.position.set(0, 0.2, -1);
+            weaponContainer.add(muzzleLight);
+
+            const pistol = loadedModels.pistol;
+            pistol.scale.set(0.1, 0.1, 0.1);
+            pistol.rotation.y = 1.57;
+            weaponContainer.add(pistol);
+
+            weaponContainer.position.set(0.25, -0.5, -0.6);
+        }
+
+        function checkShoot() {
+            if (!isLocked || !weaponContainer) return;
+            const now = Date.now();
+            if (now - lastShootTime > 400) { // 400ms fire rate
+                shoot();
+                lastShootTime = now;
+            }
+        }
+
+        function shoot() {
+            muzzleLight.intensity = 2;
+            setTimeout(() => muzzleLight.intensity = 0, 50);
+
+            const sfxPistol = document.getElementById('sfx-pistol');
+            if (sfxPistol) {
+                sfxPistol.currentTime = 0;
+                sfxPistol.play().catch(e => {});
+            }
+
+            // Recoil animation
+            weaponContainer.position.z += 0.05;
+            setTimeout(() => { if(weaponContainer) weaponContainer.position.z -= 0.05 }, 80);
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+            // Collect targets (platforms + enemies)
+            let targets = platforms.map(p => p.mesh);
+            activeEnemies.forEach(e => {
+                if (e.mesh.visible) {
+                    targets.push(e.mesh);
+                }
+            });
+
+            const intersects = raycaster.intersectObjects(targets, true);
+
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                let obj = hit.object;
+
+                // Find if we hit an enemy
+                const hitEnemy = activeEnemies.find(e => {
+                    let p = obj;
+                    while(p) {
+                        if (p === e.mesh) return true;
+                        p = p.parent;
+                    }
+                    return false;
+                });
+
+                if (hitEnemy) {
+                    hitEnemy.hp -= 34; // 3 shots to kill
+                    if (hitEnemy.hp <= 0) {
+                        hitEnemy.mesh.visible = false;
+                    }
+                }
+            }
+        }
+
         // --- Level Generation Functions ---
         function createPlatform(x, y, z, w, h, d, color, type = 'normal') {
             const geometry = new THREE.BoxGeometry(w, h, d);
@@ -317,11 +426,39 @@
 
 
                 if (r < 0.3) {
+
                     const w = 3 + Math.random() * 3;
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+
+                    // 30% chance to spawn an enemy on this platform
+                    if (Math.random() < 0.3 && loadedModels.enemy) {
+                        const enemyGroup = new THREE.Group();
+
+                        // We use clone() directly from the Object3D but SkeletonUtils is better for skinned meshes.
+                        // Assuming enemy.glb might not be skinned, or we just clone it normally.
+                        let clonedMesh;
+                        if (THREE.SkeletonUtils) {
+                             clonedMesh = THREE.SkeletonUtils.clone(loadedModels.enemy);
+                        } else {
+                             clonedMesh = loadedModels.enemy.clone();
+                        }
+
+                        enemyGroup.add(clonedMesh);
+                        enemyGroup.scale.set(0.06, 0.06, 0.06);
+                        enemyGroup.position.set(curX, curY + 0.5, curZ);
+                        scene.add(enemyGroup);
+
+                        activeEnemies.push({
+                            mesh: enemyGroup,
+                            hp: 100,
+                            lastShot: 0
+                        });
+                    }
+
                     curZ -= d/2;
+
                 } 
                 else if (r < 0.5) {
                     const len = 8 + Math.random() * 6;
@@ -394,6 +531,15 @@
         function init() {
             clock = new THREE.Clock();
 
+            const gltfLoader = new THREE.GLTFLoader();
+            gltfLoader.load('pistol.glb', (gltf) => {
+                loadedModels.pistol = gltf.scene;
+                attachWeapon();
+            });
+            gltfLoader.load('enemy.glb', (gltf) => {
+                loadedModels.enemy = gltf.scene;
+            });
+
             // 1. Scene Setup
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87CEEB); 
@@ -449,6 +595,13 @@
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
             document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mousedown', (e) => {
+                if (isLocked) {
+                    isMouseDown = true;
+                    checkShoot();
+                }
+            });
+            document.addEventListener('mouseup', () => { isMouseDown = false; });
 
             // --- Camera Snap Fix ---
             updateCameraPosition();
@@ -569,6 +722,26 @@
         }
 
 
+        function takeDamage(amount) {
+            playerHealth -= amount;
+            document.getElementById('hp-display').innerText = Math.max(0, playerHealth);
+
+            // Flash screen red
+            const blocker = document.getElementById('blocker');
+            blocker.style.display = 'block';
+            blocker.style.background = 'rgba(255, 0, 0, 0.4)';
+            setTimeout(() => {
+                if (isLocked) {
+                    blocker.style.display = 'none';
+                    blocker.style.background = 'rgba(0,0,0,0.5)';
+                }
+            }, 150);
+
+            if (playerHealth <= 0) {
+                respawn('death');
+            }
+        }
+
         // --- Physics Loop ---
         function respawn(type) {
             playerMesh.position.copy(spawnPoint);
@@ -576,6 +749,9 @@
             momentum.set(0, 0, 0);
             if (playerMesh.position.y < -30) playerVelocity.set(0,0,0);
             
+            playerHealth = 100;
+            document.getElementById('hp-display').innerText = playerHealth;
+
             // SFX
             if (type === 'fire') {
                 if(sfxFire) { sfxFire.currentTime = 0; sfxFire.play().catch(e => {}); }
@@ -883,6 +1059,53 @@
 
 
             checkPhysics(dt);
+
+            // --- Enemy AI ---
+            const now = Date.now();
+            activeEnemies.forEach(enemy => {
+                if (enemy.mesh.visible && enemy.hp > 0) {
+                    const dist = enemy.mesh.position.distanceTo(playerMesh.position);
+
+                    // Look at player (Y axis only)
+                    const targetPos = new THREE.Vector3(playerMesh.position.x, enemy.mesh.position.y, playerMesh.position.z);
+                    enemy.mesh.lookAt(targetPos);
+
+                    // Shoot if close enough and line of sight is clear
+                    if (dist < 30 && now - enemy.lastShot > 1500) {
+                        const start = new THREE.Vector3().copy(enemy.mesh.position);
+                        start.y += 1.0;
+                        const end = new THREE.Vector3().copy(playerMesh.position);
+                        const direction = new THREE.Vector3().subVectors(end, start).normalize();
+
+                        const raycaster = new THREE.Raycaster(start, direction);
+                        raycaster.far = 40;
+
+                        const targets = platforms.map(p => p.mesh);
+                        const intersects = raycaster.intersectObjects(targets, true);
+
+                        if (intersects.length === 0 || intersects[0].distance > dist) {
+                            // Player hit
+                            enemy.lastShot = now;
+
+                            // Visuals
+                            const flash = new THREE.PointLight(0xffff00, 2, 5);
+                            flash.position.copy(start);
+                            scene.add(flash);
+                            setTimeout(() => scene.remove(flash), 100);
+
+                            const sfxEnemy = document.getElementById('sfx-enemy-shoot');
+                            if (sfxEnemy) {
+                                sfxEnemy.currentTime = 0;
+                                sfxEnemy.volume = 0.3;
+                                sfxEnemy.play().catch(e => {});
+                            }
+
+                            takeDamage(20);
+                        }
+                    }
+                }
+            });
+
             updateAnimation(time);
 
 
