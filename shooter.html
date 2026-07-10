@@ -414,11 +414,12 @@
 
         // 5. Controls
         controls = new PointerLockControls(camera, document.body);
-        document.body.addEventListener('click', (e) => {
+        document.body.addEventListener('mousedown', (e) => {
             if (!gameStarted) return;
             if (e.target.closest('#radio-container') || e.target.closest('#leaderboard-modal') || e.target.closest('#start-screen')) return; 
+            e.preventDefault();
             if(!controls.isLocked && !isGameOver) {
-                controls.lock();
+                document.body.requestPointerLock();
                 // Resume Audio Context on interaction
                 if (audioListener.context.state === 'suspended') {
                     audioListener.context.resume();
@@ -507,7 +508,7 @@
                         spawnEnemies();
                         switchWeapon(2); // Start with Hands
                         
-                        if (!isGameOver) controls.lock();
+                        if (!isGameOver) document.body.requestPointerLock();
                         if (audioListener.context.state === 'suspended') {
                             audioListener.context.resume();
                         }
@@ -640,7 +641,7 @@
         const down = new THREE.Vector3(0, -1, 0);
         const up = new THREE.Vector3(0, 1, 0);
         
-        const playerPos = new THREE.Vector3().copy(physicsBody.position);
+        const playerPos = new THREE.Vector3(physicsBody.position.x, physicsBody.position.y, physicsBody.position.z);
         
         for(let i=0; i<50; i++) {
             // Spawn in a donut shape around the player (radius 15 to 45)
@@ -711,7 +712,7 @@
         
         // Use smart spawning logic
         const pos = getValidSpawnPosition();
-        enemy.body.position.copy(pos);
+        enemy.body.position.set(pos.x, pos.y, pos.z);
         enemy.body.velocity.set(0,0,0);
         enemy.body.wakeUp();
         enemy.spawnTime = Date.now();
@@ -913,8 +914,8 @@
         const startCannon = enemy.body.position.clone();
         startCannon.y += 1.5;
         const endCannon = physicsBody.position.clone();
-        const start = new THREE.Vector3().copy(startCannon);
-        const end = new THREE.Vector3().copy(endCannon);
+        const start = new THREE.Vector3(startCannon.x, startCannon.y, startCannon.z);
+        const end = new THREE.Vector3(endCannon.x, endCannon.y, endCannon.z);
         end.y += 1.0; // Aim at player's chest, not feet
         const direction = new THREE.Vector3().subVectors(end, start).normalize();
         
@@ -1079,7 +1080,7 @@
         document.getElementById('leaderboard-modal').style.display = 'none';
         resetGame();
         if (!controls.isLocked) {
-            controls.lock();
+            document.body.requestPointerLock();
         }
     });
 
@@ -1116,7 +1117,7 @@
             }
         }
 
-        camera.position.copy(physicsBody.position);
+        camera.position.set(physicsBody.position.x, physicsBody.position.y, physicsBody.position.z);
         camera.position.y += 0.6;
         
         // Player out of bounds reset
@@ -1157,15 +1158,15 @@
                      return;
                  }
 
-                 e.debugMesh.position.copy(e.body.position);
-                 e.debugMesh.quaternion.copy(e.body.quaternion);
+                 e.debugMesh.position.set(e.body.position.x, e.body.position.y, e.body.position.z);
+                 e.debugMesh.quaternion.set(e.body.quaternion.x, e.body.quaternion.y, e.body.quaternion.z, e.body.quaternion.w);
 
-                 e.mesh.position.copy(e.body.position);
+                 e.mesh.position.set(e.body.position.x, e.body.position.y, e.body.position.z);
                  e.mesh.position.y -= 0.9;
-                 e.mesh.quaternion.copy(e.body.quaternion);
+                 e.mesh.quaternion.set(e.body.quaternion.x, e.body.quaternion.y, e.body.quaternion.z, e.body.quaternion.w);
 
                  if (!isGameOver) {
-                    const dist = new THREE.Vector3().copy(e.body.position).distanceTo(new THREE.Vector3().copy(physicsBody.position));
+                    const dist = new THREE.Vector3(e.body.position.x, e.body.position.y, e.body.position.z).distanceTo(new THREE.Vector3(physicsBody.position.x, physicsBody.position.y, physicsBody.position.z));
                     
                     // Look at player
                     e.mesh.lookAt(camera.position.x, e.mesh.position.y, camera.position.z);
@@ -1181,7 +1182,7 @@
                     if (now - e.spawnTime > 1000) {
                         if (dist >= 17) {
                             // Move towards player
-                            const dir = new THREE.Vector3().subVectors(new THREE.Vector3().copy(physicsBody.position), new THREE.Vector3().copy(e.body.position));
+                            const dir = new THREE.Vector3().subVectors(new THREE.Vector3(physicsBody.position.x, physicsBody.position.y, physicsBody.position.z), new THREE.Vector3(e.body.position.x, e.body.position.y, e.body.position.z));
                             dir.y = 0;
                             if (dir.lengthSq() > 0) {
                                 dir.normalize();
@@ -1190,7 +1191,7 @@
                             }
                         } else if (dist >= 11 && dist <= 13) {
                             // Back up
-                            const dir = new THREE.Vector3().subVectors(new THREE.Vector3().copy(e.body.position), new THREE.Vector3().copy(physicsBody.position));
+                            const dir = new THREE.Vector3().subVectors(new THREE.Vector3(e.body.position.x, e.body.position.y, e.body.position.z), new THREE.Vector3(physicsBody.position.x, physicsBody.position.y, physicsBody.position.z));
                             dir.y = 0;
                             if (dir.lengthSq() > 0) {
                                 dir.normalize();
