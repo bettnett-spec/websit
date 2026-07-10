@@ -131,6 +131,8 @@
     <audio id="sfx-death" src="death.mp3"></audio>
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
+    <audio id="sfx-pistol" src="pistol.mp3"></audio>
+    <audio id="sfx-enemy-shoot" src="enemy_shoot.mp3"></audio>
 
 
     <!-- Three.js from CDN -->
@@ -153,7 +155,18 @@
         let playerMesh; // Player Group (root of the character)
         let platforms = [];
         let clock; 
-        let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
+        let isPlayerLoaded = false;
+
+        // --- Combat & Enemy Globals ---
+        let enemies = [];
+        let enemyModel = null;
+        let lastShootTime = 0;
+        let playerHealth = 100;
+        let sfxPistol, sfxEnemyShoot, sfxDeath;
+        let projectiles = [];
+        const PROJECTILE_SPEED = 30;
+        const ENEMY_PROJECTILE_SPEED = 15;
+ // Kept for consistency, but will be set true immediately
         
         // Physics State
         let playerVelocity = new THREE.Vector3();
@@ -198,10 +211,14 @@
         // Sound Elements
         const sfxJump = document.getElementById('sfx-jump');
         const sfxCheck = document.getElementById('sfx-check');
-        const sfxDeath = document.getElementById('sfx-death');
         const sfxFire = document.getElementById('sfx-fire');
         const sfxWalk = document.getElementById('sfx-walk');
         
+        sfxPistol = document.getElementById('sfx-pistol');
+        sfxEnemyShoot = document.getElementById('sfx-enemy-shoot');
+        sfxDeath = document.getElementById('sfx-death');
+
+
         if(sfxWalk) sfxWalk.volume = 0.4; 
 
         // Radio System
@@ -283,8 +300,16 @@
                 type: type,
                 stage: currentStage
             };
+
             platforms.push(platformData);
+
+            // Randomly spawn an enemy on this platform
+            if (type !== 'spawn' && type !== 'lava' && type !== 'checkpoint' && Math.random() < 0.3 && enemyModel) {
+                spawnEnemy(x, y + h/2, z);
+            }
+
             return mesh;
+
         }
 
 
@@ -425,6 +450,21 @@
 
             // 5. Create Player (Original Blocky)
             createPlayer();
+
+            // Load Enemy Model
+            const loader = new THREE.GLTFLoader();
+            loader.load('enemy.glb', (gltf) => {
+                enemyModel = gltf.scene;
+                enemyModel.scale.set(0.06, 0.06, 0.06); // typical scale from shooter
+                // Enable shadows
+                enemyModel.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+            });
+
 
             // 6. Create Initial Level
             createPlatform(0, 0, 0, 10, 1, 10, 0xaaaaaa, 'spawn'); 
@@ -570,6 +610,134 @@
 
 
         // --- Physics Loop ---
+
+        // --- Combat Functions ---
+        function spawnEnemy(x, y, z) {
+            if (!enemyModel) return;
+            const enemy = enemyModel.clone();
+            enemy.position.set(x, y + 1.2, z); // Adjust Y based on scale
+            scene.add(enemy);
+            enemies.push({
+                mesh: enemy,
+                health: 100,
+                lastShoot: Date.now() + Math.random() * 2000 // Stagger initial shooting
+            });
+        }
+
+        function shoot() {
+            if (!isLocked || !isPlayerLoaded) return;
+            const now = Date.now();
+            if (now - lastShootTime < 400) return; // Fire rate limit
+            lastShootTime = now;
+
+            if (sfxPistol) {
+                sfxPistol.currentTime = 0;
+                sfxPistol.play().catch(e => {});
+            }
+
+            // Simple Raycast for shooting
+            const raycaster = new THREE.Raycaster();
+            const direction = new THREE.Vector3();
+            camera.getWorldDirection(direction);
+            raycaster.set(camera.position, direction);
+
+            const enemyMeshes = enemies.map(e => e.mesh);
+            const intersects = raycaster.intersectObjects(enemyMeshes, true);
+
+            if (intersects.length > 0) {
+                // Find root enemy object
+                let hitObject = intersects[0].object;
+                while (hitObject.parent && hitObject.parent.type !== 'Scene' && !enemies.find(e => e.mesh === hitObject)) {
+                    hitObject = hitObject.parent;
+                }
+
+                const enemyObj = enemies.find(e => e.mesh === hitObject);
+                if (enemyObj) {
+                    enemyObj.health -= 50;
+                    if (enemyObj.health <= 0) {
+                        scene.remove(enemyObj.mesh);
+                        enemies = enemies.filter(e => e !== enemyObj);
+                    }
+                }
+            }
+        }
+
+        function updateCombat(dt) {
+            const now = Date.now();
+
+            // Update enemy projectiles
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const proj = projectiles[i];
+                proj.mesh.position.addScaledVector(proj.velocity, dt);
+                proj.life -= dt;
+
+                if (proj.life <= 0) {
+                    scene.remove(proj.mesh);
+                    projectiles.splice(i, 1);
+                    continue;
+                }
+
+                // Check player collision
+                if (!proj.isPlayer) {
+                    const dist = proj.mesh.position.distanceTo(playerMesh.position);
+                    if (dist < 1.0) { // Player radius
+                        scene.remove(proj.mesh);
+                        projectiles.splice(i, 1);
+                        playerHealth -= 20;
+                        if (playerHealth <= 0) {
+                            respawn('enemy');
+                        }
+                    }
+                }
+            }
+
+            // Update enemies (look at player, shoot)
+            for (const enemy of enemies) {
+                // Make enemy look at player (ignore Y to keep upright)
+                const targetPos = playerMesh.position.clone();
+                targetPos.y = enemy.mesh.position.y;
+                enemy.mesh.lookAt(targetPos);
+
+                // Check line of sight / distance
+                const dist = enemy.mesh.position.distanceTo(playerMesh.position);
+                if (dist < 30 && now - enemy.lastShoot > 2000) {
+                    enemy.lastShoot = now;
+                    if (sfxEnemyShoot) {
+                        sfxEnemyShoot.currentTime = 0;
+                        sfxEnemyShoot.play().catch(e => {});
+                    }
+
+                    // Fire projectile
+                    const projGeo = new THREE.SphereGeometry(0.2, 8, 8);
+                    const projMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+                    const projMesh = new THREE.Mesh(projGeo, projMat);
+
+                    // Spawn at enemy position
+                    projMesh.position.copy(enemy.mesh.position);
+                    projMesh.position.y += 0.5; // Roughly chest height
+                    scene.add(projMesh);
+
+                    // Direction towards player (roughly at body center)
+                    const dir = playerMesh.position.clone().add(new THREE.Vector3(0, 0, 0)).sub(projMesh.position).normalize();
+
+                    projectiles.push({
+                        mesh: projMesh,
+                        velocity: dir.multiplyScalar(ENEMY_PROJECTILE_SPEED),
+                        life: 3,
+                        isPlayer: false
+                    });
+                }
+            }
+        }
+
+        // Add click listener for shooting
+        document.addEventListener('mousedown', (e) => {
+            if (isLocked) {
+                shoot();
+            }
+        });
+
+
         function respawn(type) {
             playerMesh.position.copy(spawnPoint);
             playerVelocity.set(0, 0, 0);
@@ -884,6 +1052,8 @@
 
             checkPhysics(dt);
             updateAnimation(time);
+            updateCombat(dt);
+
 
 
             // Ensure camera update runs every frame during the active game loop
