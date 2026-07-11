@@ -99,7 +99,7 @@
 <body>
 
 
-    <div id="info">Stage: <span id="stage-display">1</span></div>
+        <div id="info">Stage: <span id="stage-display">1</span> | Score: <span id="score-display">0</span> | Health: <span id="health-display" style="color:#00ff00;">100</span></div>
     <div id="checkpoint-msg">CHECKPOINT! NEXT LEVEL GENERATED</div>
     <div id="crosshair"></div>
 
@@ -153,7 +153,25 @@
         let playerMesh; // Player Group (root of the character)
         let platforms = [];
         let clock; 
-        let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
+        let isPlayerLoaded = false;
+
+        // --- Combat State ---
+        let enemies = [];
+        let weaponModel = null;
+        let isMouseDown = false;
+        let lastShootTime = 0;
+        let muzzleLight = null;
+        let enemyModel = null;
+        const WEAPON_SCALE = 0.1;
+        const ENEMY_SCALE = 0.06;
+        let score = 0;
+        let playerHealth = 100;
+
+        // Sound Elements for Combat
+        const sfxPistol = new Audio('pistol.mp3');
+        const sfxEnemy = new Audio('enemy_shoot.mp3');
+        const sfxDing = new Audio('ding.mp3');
+
         
         // Physics State
         let playerVelocity = new THREE.Vector3();
@@ -321,6 +339,20 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+
+            // Chance to spawn an enemy
+            if (r > 0.4 && enemyModel && curZ < nextStageStart.z - 10) {
+                const enemyMesh = enemyModel.clone();
+                enemyMesh.position.set(curX, curY + 0.5, curZ - d/2);
+                scene.add(enemyMesh);
+                enemies.push({
+                    mesh: enemyMesh,
+                    health: 100,
+                    lastShot: 0,
+                    stage: currentStage
+                });
+            }
+
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -423,6 +455,33 @@
             dirLight.shadow.mapSize.height = 2048;
             scene.add(dirLight);
 
+
+            // 4.5. Combat Setup
+            muzzleLight = new THREE.PointLight(0xffff00, 0, 5);
+            muzzleLight.position.set(0.25, -0.3, -1);
+            camera.add(muzzleLight);
+
+            const gltfLoader = new THREE.GLTFLoader();
+            gltfLoader.load('pistol.glb', (gltf) => {
+                weaponModel = gltf.scene;
+                weaponModel.scale.set(WEAPON_SCALE, WEAPON_SCALE, WEAPON_SCALE);
+                weaponModel.position.set(0.25, -0.5, -0.6);
+                weaponModel.rotation.y = 1.57;
+                camera.add(weaponModel);
+            });
+
+            gltfLoader.load('enemy.glb', (gltf) => {
+                enemyModel = gltf.scene;
+                enemyModel.scale.set(ENEMY_SCALE, ENEMY_SCALE, ENEMY_SCALE);
+            });
+
+            document.addEventListener('mousedown', (e) => {
+                if(!isLocked) return;
+                isMouseDown = true;
+                shoot();
+            });
+            document.addEventListener('mouseup', () => { isMouseDown = false; });
+
             // 5. Create Player (Original Blocky)
             createPlayer();
 
@@ -482,6 +541,120 @@
 
         // --- Game Logic and Animation ---
 
+
+
+        function shoot() {
+            const now = Date.now();
+            if (now - lastShootTime < 400) return; // Fire rate
+            lastShootTime = now;
+
+            if(sfxPistol) { sfxPistol.currentTime=0; sfxPistol.play().catch(()=>{}); }
+
+            muzzleLight.intensity = 2;
+            setTimeout(() => muzzleLight.intensity = 0, 50);
+
+            if (weaponModel) {
+                weaponModel.position.z += 0.05;
+                setTimeout(() => weaponModel.position.z -= 0.05, 80);
+            }
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+
+            const enemyMeshes = enemies.map(e => e.mesh);
+            const intersects = raycaster.intersectObjects(enemyMeshes, true);
+
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                let obj = hit.object;
+                const enemy = enemies.find(e => {
+                    let p = obj;
+                    while(p) {
+                        if (p === e.mesh) return true;
+                        p = p.parent;
+                    }
+                    return false;
+                });
+
+                if (enemy) {
+                    enemy.health -= 50;
+                    if (enemy.health <= 0) {
+                        scene.remove(enemy.mesh);
+                        enemies = enemies.filter(e => e !== enemy);
+                        score += 10;
+                        document.getElementById('score-display').innerText = score;
+                        if(sfxDing) { sfxDing.currentTime=0; sfxDing.play().catch(()=>{}); }
+                    }
+                }
+            }
+        }
+
+        function updateEnemies(dt, time) {
+            const now = Date.now();
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const enemy = enemies[i];
+
+                // Cleanup enemies far behind
+                if (enemy.mesh.position.z > playerMesh.position.z + 20) {
+                    scene.remove(enemy.mesh);
+                    enemies.splice(i, 1);
+                    continue;
+                }
+
+                // Make enemy look at player
+                enemy.mesh.lookAt(playerMesh.position.x, enemy.mesh.position.y, playerMesh.position.z);
+
+                // Simple bobbing animation
+                enemy.mesh.position.y += Math.sin(time * 5) * 0.01;
+
+                const dist = enemy.mesh.position.distanceTo(playerMesh.position);
+                if (dist < 20 && dist > 2) {
+                    if (now - enemy.lastShot > 1500 + Math.random() * 1000) {
+                        enemyShoot(enemy);
+                        enemy.lastShot = now;
+                    }
+                }
+            }
+        }
+
+        function enemyShoot(enemy) {
+            if (!isLocked) return;
+
+            const start = new THREE.Vector3().copy(enemy.mesh.position);
+            start.y += 0.8;
+            const end = new THREE.Vector3().copy(playerMesh.position);
+            end.y += 0.8;
+
+            // Visual tracer
+            const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+            const points = [start, end];
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(geometry, material);
+            scene.add(line);
+            setTimeout(() => {
+                scene.remove(line);
+                geometry.dispose();
+                material.dispose();
+            }, 100);
+
+            // Muzzle flash
+            const flash = new THREE.PointLight(0xffff00, 2, 5);
+            flash.position.set(start.x, start.y, start.z);
+            scene.add(flash);
+            setTimeout(() => scene.remove(flash), 100);
+
+            if(sfxEnemy) { sfxEnemy.currentTime=0; sfxEnemy.play().catch(()=>{}); }
+
+            playerHealth -= 10;
+            const healthEl = document.getElementById('health-display');
+            healthEl.innerText = Math.max(0, playerHealth);
+            if (playerHealth <= 30) healthEl.style.color = '#ff0000';
+            else healthEl.style.color = '#00ff00';
+
+            if (playerHealth <= 0) {
+                respawn('fire');
+            }
+        }
 
         function updateAnimation(time) {
             if (!playerMesh || !playerMesh.userData || !playerMesh.userData.model) return;
@@ -574,6 +747,11 @@
             playerMesh.position.copy(spawnPoint);
             playerVelocity.set(0, 0, 0);
             momentum.set(0, 0, 0);
+            playerHealth = 100;
+            const healthEl = document.getElementById('health-display');
+            healthEl.innerText = '100';
+            healthEl.style.color = '#00ff00';
+
             if (playerMesh.position.y < -30) playerVelocity.set(0,0,0);
             
             // SFX
@@ -591,6 +769,11 @@
             climbTimer = 0;
             playerVelocity.set(0, 0, 0);
             momentum.set(0, 0, 0);
+            playerHealth = 100;
+            const healthEl = document.getElementById('health-display');
+            healthEl.innerText = '100';
+            healthEl.style.color = '#00ff00';
+
 
 
             const pPos = p.mesh.position;
@@ -884,6 +1067,7 @@
 
             checkPhysics(dt);
             updateAnimation(time);
+            updateEnemies(dt, time);
 
 
             // Ensure camera update runs every frame during the active game loop
