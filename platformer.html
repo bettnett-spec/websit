@@ -136,6 +136,7 @@
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
 
     <script>
@@ -155,6 +156,11 @@
         let clock; 
         let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
         
+        let gltfLoader;
+        let astolfoModel = null;
+        let enemyModel = null;
+        const hazards = [];
+
         // Physics State
         let playerVelocity = new THREE.Vector3();
         let momentum = new THREE.Vector3(); 
@@ -263,6 +269,32 @@
 
         init();
         
+        function loadModels() {
+            gltfLoader = new THREE.GLTFLoader();
+            gltfLoader.load('astolfo_school_uniform.glb', (gltf) => {
+                astolfoModel = gltf.scene;
+                // Pre-process model
+                astolfoModel.scale.set(0.015, 0.015, 0.015);
+                astolfoModel.traverse(child => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+            });
+            gltfLoader.load('enemy.glb', (gltf) => {
+                enemyModel = gltf.scene;
+                // Pre-process model
+                enemyModel.scale.set(0.06, 0.06, 0.06);
+                enemyModel.traverse(child => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+            });
+        }
+
         // --- Level Generation Functions ---
         function createPlatform(x, y, z, w, h, d, color, type = 'normal') {
             const geometry = new THREE.BoxGeometry(w, h, d);
@@ -329,7 +361,19 @@
                     const lavaCount = Math.floor(len / 4); 
                     for(let k=0; k<lavaCount; k++) {
                         const lZ = curZ - (k * 4) - 2;
-                        createPlatform(curX, curY + 0.6, lZ, 3.5, 0.2, 1.0, 0xff0000, 'lava');
+                        // Determine whether to place lava or an enemy hazard
+                        if (Math.random() > 0.5 && enemyModel) {
+                            // Place enemy model
+                            const enemy = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(enemyModel) : enemyModel.clone();
+                            enemy.position.set(curX, curY + 0.5, lZ);
+                            scene.add(enemy);
+                            hazards.push(enemy);
+                            // Still create an invisible 'lava' block for the death trigger
+                            const p = createPlatform(curX, curY + 0.6, lZ, 3.5, 1.5, 1.0, 0xff0000, 'lava');
+                            p.material.visible = false;
+                        } else {
+                            createPlatform(curX, curY + 0.6, lZ, 3.5, 0.2, 1.0, 0xff0000, 'lava');
+                        }
                     }
                     curZ -= len;
                 }
@@ -354,11 +398,17 @@
             curZ -= 4;
             createPlatform(curX, curY, curZ - 3, 8, 1, 6, 0x00FF00, 'checkpoint');
             
-            const geo = new THREE.CylinderGeometry(0.5, 0.5, 5);
-            const mat = new THREE.MeshBasicMaterial({color: 0xffff00});
-            const pole = new THREE.Mesh(geo, mat);
-            pole.position.set(curX + 3, curY + 2.5, curZ - 3);
-            scene.add(pole);
+            if (astolfoModel) {
+                const model = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(astolfoModel) : astolfoModel.clone();
+                model.position.set(curX + 3, curY + 0.5, curZ - 3);
+                scene.add(model);
+            } else {
+                const geo = new THREE.CylinderGeometry(0.5, 0.5, 5);
+                const mat = new THREE.MeshBasicMaterial({color: 0xffff00});
+                const pole = new THREE.Mesh(geo, mat);
+                pole.position.set(curX + 3, curY + 2.5, curZ - 3);
+                scene.add(pole);
+            }
 
 
             nextStageStart.set(curX, curY, curZ - 6);
@@ -407,6 +457,8 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
             document.body.appendChild(renderer.domElement);
+
+            loadModels();
 
             // 4. Lighting
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -885,6 +937,10 @@
             checkPhysics(dt);
             updateAnimation(time);
 
+            // Rotate hazards
+            for (let h of hazards) {
+                h.rotation.y += 2 * dt;
+            }
 
             // Ensure camera update runs every frame during the active game loop
             updateCameraPosition();
