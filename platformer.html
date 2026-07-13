@@ -136,6 +136,7 @@
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
 
     <script>
@@ -223,6 +224,34 @@
         const radioAudio = new Audio();
         radioAudio.volume = 0.2;
         radioAudio.addEventListener('ended', nextTrack);
+
+        // --- Shared Audio/Assets ---
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        let sfxPistolBuffer = null;
+        let sfxEnemyShootBuffer = null;
+
+        const gltfModels = {};
+        const loadingManager = new THREE.LoadingManager();
+
+        loadingManager.onLoad = function() {
+            console.log('All assets loaded.');
+        };
+
+        const audioLoader = new THREE.AudioLoader(loadingManager);
+        audioLoader.load('pistol.mp3', function(buffer) {
+            sfxPistolBuffer = buffer;
+        });
+        audioLoader.load('enemy_shoot.mp3', function(buffer) {
+            sfxEnemyShootBuffer = buffer;
+        });
+
+        const gltfLoader = new THREE.GLTFLoader(loadingManager);
+        gltfLoader.load('enemy.glb', function(gltf) {
+            gltfModels.enemy = gltf.scene;
+        });
+        gltfLoader.load('pistol.glb', function(gltf) {
+            gltfModels.pistol = gltf.scene;
+        });
 
         function playTrack(idx) {
             currentTrackIdx = idx;
@@ -315,17 +344,20 @@
                 if(curX > 40) curX = 40;
                 if(curX < -40) curX = -40;
 
+                let platformCenterPos = new THREE.Vector3(curX, curY, curZ);
 
                 if (r < 0.3) {
                     const w = 3 + Math.random() * 3;
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    platformCenterPos.set(curX, curY, curZ);
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
                     const len = 8 + Math.random() * 6;
                     createPlatform(curX, curY, curZ - len/2, 4, 1, len, 0x333333);
+                    platformCenterPos.set(curX, curY, curZ - len/2);
                     const lavaCount = Math.floor(len / 4); 
                     for(let k=0; k<lavaCount; k++) {
                         const lZ = curZ - (k * 4) - 2;
@@ -337,6 +369,7 @@
                      const len = 6 + Math.random() * 6;
                      curZ -= len/2;
                      createPlatform(curX, curY, curZ, 1.2, 1, len, stageColor);
+                     platformCenterPos.set(curX, curY, curZ);
                      curZ -= len/2;
                 }
                 else {
@@ -347,6 +380,20 @@
                         curY += (Math.random() - 0.3) * 1.5; 
                         createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
                     }
+                    platformCenterPos.set(curX, curY, curZ); // roughly the last step
+                }
+
+                // Spawn Enemy on platform randomly (30% chance per valid platform)
+                if (gltfModels.enemy && Math.random() < 0.3) {
+                    const enemyMesh = THREE.SkeletonUtils.clone(gltfModels.enemy);
+                    enemyMesh.scale.set(0.06, 0.06, 0.06);
+                    enemyMesh.position.set(platformCenterPos.x, platformCenterPos.y + 0.5, platformCenterPos.z);
+                    scene.add(enemyMesh);
+                    enemies.push({
+                        mesh: enemyMesh,
+                        lastShot: 0,
+                        health: 1
+                    });
                 }
             }
 
@@ -459,6 +506,17 @@
 
         // --- Player Creation (Original Blocky) ---
 
+        let enemies = [];
+        let raycaster = new THREE.Raycaster();
+
+        function playSoundBuffer(buffer) {
+            if (!buffer) return;
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioContext.destination);
+            source.start(0);
+        }
+
         function createPlayer() {
             const group = new THREE.Group();
             group.position.copy(spawnPoint);
@@ -476,11 +534,130 @@
             group.add(model);
             group.userData.model = model;
             isPlayerLoaded = true;
+
+            // Attach pistol to player, wait for it to load if necessary
+            let attachPistolInterval = setInterval(() => {
+                if (gltfModels.pistol) {
+                    const pistolClone = gltfModels.pistol.clone();
+                    pistolClone.scale.set(0.1, 0.1, 0.1);
+                    pistolClone.position.set(0.2, -0.4, -0.5); // position relative to model
+                    pistolClone.rotation.y = Math.PI / 2; // point forward
+                    model.add(pistolClone);
+                    clearInterval(attachPistolInterval);
+                }
+            }, 100);
+
+            document.addEventListener('mousedown', function(e) {
+                if (!isLocked) return;
+
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+
+                playSoundBuffer(sfxPistolBuffer);
+
+                // Raycast for enemies
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                let hitEnemy = null;
+                let minDistance = Infinity;
+
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    const enemy = enemies[i];
+                    if (!enemy.mesh) continue;
+
+                    const intersects = raycaster.intersectObject(enemy.mesh, true);
+                    if (intersects.length > 0) {
+                        if (intersects[0].distance < minDistance) {
+                            minDistance = intersects[0].distance;
+                            hitEnemy = enemy;
+                        }
+                    }
+                }
+
+                if (hitEnemy) {
+                    scene.remove(hitEnemy.mesh);
+                    const index = enemies.indexOf(hitEnemy);
+                    if (index > -1) {
+                        enemies.splice(index, 1);
+                    }
+                }
+            });
         }
 
 
 
         // --- Game Logic and Animation ---
+
+        function updateEnemies(time, dt) {
+            if (!isPlayerLoaded || !playerMesh) return;
+
+            const now = Date.now();
+
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const enemy = enemies[i];
+                if (!enemy.mesh) continue;
+
+                // Remove enemies that fall off
+                if (enemy.mesh.position.y < -30) {
+                    scene.remove(enemy.mesh);
+                    enemies.splice(i, 1);
+                    continue;
+                }
+
+                const dist = enemy.mesh.position.distanceTo(playerMesh.position);
+
+                // Only active if close enough
+                if (dist < 40) {
+                    enemy.mesh.lookAt(playerMesh.position.x, enemy.mesh.position.y, playerMesh.position.z);
+
+                    // Shoot every 1.5s if in range
+                    if (now - enemy.lastShot > 1500) {
+                        enemy.lastShot = now;
+
+                        // Raycast to player
+                        const start = new THREE.Vector3().copy(enemy.mesh.position);
+                        start.y += 0.5; // chest height
+                        const target = new THREE.Vector3().copy(playerMesh.position);
+                        const dir = new THREE.Vector3().subVectors(target, start).normalize();
+
+                        raycaster.set(start, dir);
+                        raycaster.far = 40;
+
+                        let hitPlayer = false;
+                        let minMapDist = Infinity;
+
+                        // Check if hitting wall first
+                        const mapIntersects = raycaster.intersectObjects(platforms.map(p => p.mesh), false);
+                        if (mapIntersects.length > 0) {
+                            minMapDist = mapIntersects[0].distance;
+                        }
+
+                        // Check player
+                        if (playerMesh.userData && playerMesh.userData.model) {
+                            const playerIntersects = raycaster.intersectObject(playerMesh.userData.model, true);
+                            if (playerIntersects.length > 0 && playerIntersects[0].distance < minMapDist) {
+                                hitPlayer = true;
+                            }
+                        }
+
+                        // Visual Tracer
+                        const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+                        const points = [start, target];
+                        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                        const line = new THREE.Line(geometry, material);
+                        scene.add(line);
+                        setTimeout(() => scene.remove(line), 100);
+
+                        // Sound
+                        playSoundBuffer(sfxEnemyShootBuffer);
+
+                        if (hitPlayer) {
+                            respawn('fall'); // Or create a new respawn type 'enemy'
+                        }
+                    }
+                }
+            }
+        }
 
 
         function updateAnimation(time) {
@@ -884,7 +1061,7 @@
 
             checkPhysics(dt);
             updateAnimation(time);
-
+            updateEnemies(time, dt);
 
             // Ensure camera update runs every frame during the active game loop
             updateCameraPosition();
