@@ -136,6 +136,7 @@
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
 
     <script>
@@ -174,6 +175,8 @@
         let currentStage = 1;
         let nextStageStart = new THREE.Vector3(0, 0, 0); 
         let stageDirection = new THREE.Vector3(0, 0, -1); 
+        let activeEnemies = [];
+        let enemyModel = null;
         
         // Input State
         let moveForward = false;
@@ -288,6 +291,23 @@
         }
 
 
+
+        function spawnEnemyAt(x, y, z, stage) {
+            if (!enemyModel || typeof THREE.SkeletonUtils === 'undefined') return;
+            const enemy = THREE.SkeletonUtils.clone(enemyModel);
+            enemy.position.set(x, y, z);
+            enemy.scale.set(0.06, 0.06, 0.06); // typical scale from shooter
+            scene.add(enemy);
+
+            activeEnemies.push({
+                mesh: enemy,
+                stage: stage,
+                baseY: y,
+                timeOffset: Math.random() * Math.PI * 2,
+                box: new THREE.Box3().setFromObject(enemy)
+            });
+        }
+
         function generateRandomStage() {
             const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
             const stageColor = colors[Math.floor(Math.random() * colors.length)];
@@ -321,6 +341,7 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    if (Math.random() < 0.4) spawnEnemyAt(curX, curY + 1.0, curZ, currentStage);
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -346,6 +367,7 @@
                         curX += (Math.random() - 0.5) * 5; 
                         curY += (Math.random() - 0.3) * 1.5; 
                         createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
+                        if (Math.random() < 0.2) spawnEnemyAt(curX, curY + 1.0, curZ, currentStage);
                     }
                 }
             }
@@ -423,7 +445,21 @@
             dirLight.shadow.mapSize.height = 2048;
             scene.add(dirLight);
 
+
+            // Load Enemy Model
+            const loader = new THREE.GLTFLoader();
+            loader.load('enemy.glb', function(gltf) {
+                enemyModel = gltf.scene;
+                enemyModel.traverse(function(child) {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+            });
+
             // 5. Create Player (Original Blocky)
+
             createPlayer();
 
             // 6. Create Initial Level
@@ -784,6 +820,55 @@
                 setTimeout(() => { msg.style.opacity = 0; }, 2000);
                 
                 if(sfxCheck) { sfxCheck.currentTime=0; sfxCheck.play().catch(e => {}); }
+
+                // --- Memory Leak Fix: Remove old platforms and enemies ---
+                const maxStagesBehind = 2;
+
+                // Cleanup platforms
+                const keepPlatforms = [];
+                for (let i = 0; i < platforms.length; i++) {
+                    let plat = platforms[i];
+                    if (plat.stage < currentStage - maxStagesBehind) {
+                        scene.remove(plat.mesh);
+                        if (plat.mesh.geometry) plat.mesh.geometry.dispose();
+                        if (plat.mesh.material) {
+                            if (Array.isArray(plat.mesh.material)) {
+                                plat.mesh.material.forEach(m => m.dispose());
+                            } else {
+                                plat.mesh.material.dispose();
+                            }
+                        }
+                    } else {
+                        keepPlatforms.push(plat);
+                    }
+                }
+                platforms = keepPlatforms;
+
+                // Cleanup enemies
+                const keepEnemies = [];
+                for (let i = 0; i < activeEnemies.length; i++) {
+                    let e = activeEnemies[i];
+                    if (e.stage < currentStage - maxStagesBehind) {
+                        scene.remove(e.mesh);
+                        // Recursively dispose geometry and material
+                        e.mesh.traverse(function(child) {
+                            if (child.isMesh) {
+                                if (child.geometry) child.geometry.dispose();
+                                if (child.material) {
+                                    if (Array.isArray(child.material)) {
+                                        child.material.forEach(m => m.dispose());
+                                    } else {
+                                        child.material.dispose();
+                                    }
+                                }
+                            }
+                        });
+                    } else {
+                        keepEnemies.push(e);
+                    }
+                }
+                activeEnemies = keepEnemies;
+                // ---------------------------------------------------------
             } else {
                 spawnPoint.set(p.mesh.position.x, p.mesh.position.y + 0.5 + 2, p.mesh.position.z);
             }
@@ -888,6 +973,27 @@
 
             // Ensure camera update runs every frame during the active game loop
             updateCameraPosition();
+
+            // Enemy animation and collision
+            const playerBox = new THREE.Box3().setFromObject(playerMesh);
+
+            for (let i = 0; i < activeEnemies.length; i++) {
+                let e = activeEnemies[i];
+                if (!e.mesh.visible) continue;
+
+                // Bobbing animation
+                e.mesh.position.y = e.baseY + Math.sin(time * 2 + e.timeOffset) * 0.2;
+                e.mesh.rotation.y += dt;
+
+                // Update bounding box
+                e.box.setFromObject(e.mesh);
+
+                if (playerBox.intersectsBox(e.box)) {
+                    respawn('enemy');
+                    break;
+                }
+            }
+
             renderer.render(scene, camera);
         }
 
