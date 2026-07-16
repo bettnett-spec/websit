@@ -136,6 +136,7 @@
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
 
     <script>
@@ -152,8 +153,10 @@
         let camera, scene, renderer;
         let playerMesh; // Player Group (root of the character)
         let platforms = [];
+        let enemies = [];
         let clock; 
         let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
+        let loadedModels = {};
         
         // Physics State
         let playerVelocity = new THREE.Vector3();
@@ -289,6 +292,22 @@
 
 
         function generateRandomStage() {
+            // Cleanup old platforms and enemies to prevent memory leaks
+            platforms = platforms.filter(p => {
+                if (Math.abs(p.mesh.position.z - nextStageStart.z) > 100) {
+                    scene.remove(p.mesh);
+                    return false;
+                }
+                return true;
+            });
+            enemies = enemies.filter(e => {
+                if (Math.abs(e.mesh.position.z - nextStageStart.z) > 100) {
+                    scene.remove(e.mesh);
+                    return false;
+                }
+                return true;
+            });
+
             const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
             const stageColor = colors[Math.floor(Math.random() * colors.length)];
             
@@ -320,7 +339,20 @@
                     const w = 3 + Math.random() * 3;
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
-                    createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    let p = createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+
+                    // 50% chance to spawn an enemy on large platforms
+                    if (loadedModels.enemy && Math.random() > 0.5) {
+                        let enemyMesh = THREE.SkeletonUtils.clone(loadedModels.enemy);
+                        enemyMesh.scale.set(0.05, 0.05, 0.05);
+                        enemyMesh.position.set(curX, curY + 0.5, curZ);
+                        scene.add(enemyMesh);
+                        enemies.push({
+                            mesh: enemyMesh,
+                            lastShot: 0,
+                            health: 1
+                        });
+                    }
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -390,9 +422,18 @@
         }
 
         
+        function loadAssets() {
+            const loader = new THREE.GLTFLoader();
+            loader.load('enemy.glb', function (gltf) {
+                loadedModels.enemy = gltf.scene;
+            });
+        }
+
         // --- Core Initialization ---
         function init() {
             clock = new THREE.Clock();
+
+            loadAssets();
 
             // 1. Scene Setup
             scene = new THREE.Scene();
@@ -449,6 +490,7 @@
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
             document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mousedown', onMouseDown);
 
             // --- Camera Snap Fix ---
             updateCameraPosition();
@@ -568,6 +610,32 @@
             euler.x = Math.max(-limit, Math.min(limit, euler.x));
         }
 
+        function onMouseDown(event) {
+            if (!isLocked || !isPlayerLoaded) return;
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+            let enemyMeshes = enemies.map(e => e.mesh);
+            const intersects = raycaster.intersectObjects(enemyMeshes, true);
+
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                let obj = hit.object;
+                while(obj.parent && !enemies.find(e => e.mesh === obj)) {
+                    obj = obj.parent;
+                }
+
+                let enemyObj = enemies.find(e => e.mesh === obj);
+                if (enemyObj) {
+                    scene.remove(enemyObj.mesh);
+                    enemyObj.health = 0;
+                    enemies = enemies.filter(e => e !== enemyObj);
+
+                    if (sfxCheck) { sfxCheck.currentTime=0; sfxCheck.play().catch(e => {}); }
+                }
+            }
+        }
 
         // --- Physics Loop ---
         function respawn(type) {
@@ -796,6 +864,36 @@
             const dt = clock.getDelta();
             const timeScale = Math.min(dt * 60, 4);
             const time = Date.now() / 1000;
+
+            const now = Date.now();
+            if (isLocked && isPlayerLoaded) {
+                enemies.forEach(e => {
+                    if (e.health > 0) {
+                        e.mesh.lookAt(playerMesh.position.x, e.mesh.position.y, playerMesh.position.z);
+                        let dist = e.mesh.position.distanceTo(playerMesh.position);
+                        if (dist < 30 && now - e.lastShot > 2000) {
+                            e.lastShot = now;
+
+                            // Visual Tracer
+                            const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+                            const start = e.mesh.position.clone();
+                            start.y += 0.5;
+                            const end = playerMesh.position.clone();
+                            end.y += 0.5;
+                            const points = [start, end];
+                            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                            const line = new THREE.Line(geometry, material);
+                            scene.add(line);
+                            setTimeout(() => scene.remove(line), 100);
+
+                            // Simple hit detection (raycast against platforms could be added, but keeping it simple)
+                            if (dist < 30) {
+                                respawn('enemy');
+                            }
+                        }
+                    }
+                });
+            }
 
             // Check if player is loaded
             if (!isLocked && isPlayerLoaded) {
