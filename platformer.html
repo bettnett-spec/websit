@@ -135,6 +135,7 @@
 
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 
 
@@ -183,6 +184,10 @@
         let isShiftPressed = false;
         let isSpacePressed = false;
         
+        let enemies = [];
+        let enemyModel = null;
+        let sfxEnemy = null;
+
         // Camera State
         let euler = new THREE.Euler(0, 0, 0, 'YXZ');
         let cameraZoom = 6; 
@@ -289,6 +294,12 @@
 
 
         function generateRandomStage() {
+            // Clean up old enemies to prevent memory leak
+            for (let e of enemies) {
+                scene.remove(e.mesh);
+            }
+            enemies = [];
+
             const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
             const stageColor = colors[Math.floor(Math.random() * colors.length)];
             
@@ -345,8 +356,34 @@
                         curZ -= 2.5; 
                         curX += (Math.random() - 0.5) * 5; 
                         curY += (Math.random() - 0.3) * 1.5; 
-                        createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
+                        let plat = createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
+
+                        // Spawn enemy randomly
+                        if (Math.random() < 0.3 && enemyModel) {
+                            const eMesh = THREE.SkeletonUtils.clone(enemyModel);
+                            eMesh.position.set(curX, curY + 0.5, curZ);
+                            scene.add(eMesh);
+                            enemies.push({
+                                mesh: eMesh,
+                                plat: plat,
+                                startX: curX,
+                                dirX: Math.random() > 0.5 ? 1 : -1
+                            });
+                        }
                     }
+                }
+
+                // Spawn enemy on regular platforms too
+                if (r < 0.3 && Math.random() < 0.4 && enemyModel) {
+                    const eMesh = THREE.SkeletonUtils.clone(enemyModel);
+                    eMesh.position.set(curX, curY + 0.5, curZ);
+                    scene.add(eMesh);
+                    enemies.push({
+                        mesh: eMesh,
+                        plat: platforms[platforms.length - 1], // The platform just created
+                        startX: curX,
+                        dirX: Math.random() > 0.5 ? 1 : -1
+                    });
                 }
             }
 
@@ -393,6 +430,16 @@
         // --- Core Initialization ---
         function init() {
             clock = new THREE.Clock();
+
+            // Setup enemy sound
+            sfxEnemy = new Audio('enemy_shoot.mp3');
+
+            const gltfLoader = new THREE.GLTFLoader();
+            gltfLoader.load('enemy.glb', function(gltf) {
+                enemyModel = gltf.scene;
+                enemyModel.scale.set(0.06, 0.06, 0.06);
+            });
+
 
             // 1. Scene Setup
             scene = new THREE.Scene();
@@ -884,6 +931,29 @@
 
             checkPhysics(dt);
             updateAnimation(time);
+
+            // Update enemies
+            for (let e of enemies) {
+                e.mesh.position.x += e.dirX * 0.05;
+                if (Math.abs(e.mesh.position.x - e.startX) > (e.plat.width / 2)) {
+                    e.dirX *= -1;
+                    e.mesh.rotation.y = e.dirX > 0 ? Math.PI / 2 : -Math.PI / 2;
+                }
+
+                // Check collision with player
+                const dx = e.mesh.position.x - playerMesh.position.x;
+                const dy = e.mesh.position.y - playerMesh.position.y;
+                const dz = e.mesh.position.z - playerMesh.position.z;
+                const distSq = dx*dx + dy*dy + dz*dz;
+
+                if (distSq < 1.0) { // Simple radius collision
+                    if (sfxEnemy) {
+                        sfxEnemy.currentTime = 0; sfxEnemy.play().catch(e=>{});
+                    }
+                    respawn('death');
+                }
+            }
+
 
 
             // Ensure camera update runs every frame during the active game loop
