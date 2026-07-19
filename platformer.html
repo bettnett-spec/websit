@@ -136,6 +136,7 @@
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
 
     <script>
@@ -152,6 +153,7 @@
         let camera, scene, renderer;
         let playerMesh; // Player Group (root of the character)
         let platforms = [];
+        let activeEnemies = []; // Array to store enemy state
         let clock; 
         let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
         
@@ -175,6 +177,9 @@
         let nextStageStart = new THREE.Vector3(0, 0, 0); 
         let stageDirection = new THREE.Vector3(0, 0, -1); 
         
+        // Enemy Asset State
+        let enemyModel = null;
+
         // Input State
         let moveForward = false;
         let moveBackward = false;
@@ -288,7 +293,53 @@
         }
 
 
+        function cleanupOldStages() {
+            // Keep platforms/enemies from current and previous stage, remove older ones
+            const minStageToKeep = currentStage - 1;
+
+            // Cleanup platforms
+            for (let i = platforms.length - 1; i >= 0; i--) {
+                if (platforms[i].stage < minStageToKeep) {
+                    const p = platforms[i];
+                    scene.remove(p.mesh);
+                    if (p.mesh.geometry) p.mesh.geometry.dispose();
+                    if (p.mesh.material) {
+                        if (Array.isArray(p.mesh.material)) {
+                            p.mesh.material.forEach(m => m.dispose());
+                        } else {
+                            p.mesh.material.dispose();
+                        }
+                    }
+                    platforms.splice(i, 1);
+                }
+            }
+
+            // Cleanup enemies
+            for (let i = activeEnemies.length - 1; i >= 0; i--) {
+                if (activeEnemies[i].stage < minStageToKeep) {
+                    const e = activeEnemies[i];
+                    scene.remove(e.mesh);
+                    // Dispose enemy meshes properly
+                    e.mesh.traverse(child => {
+                        if (child.isMesh) {
+                            if (child.geometry) child.geometry.dispose();
+                            if (child.material) {
+                                if (Array.isArray(child.material)) {
+                                    child.material.forEach(m => m.dispose());
+                                } else {
+                                    child.material.dispose();
+                                }
+                            }
+                        }
+                    });
+                    activeEnemies.splice(i, 1);
+                }
+            }
+        }
+
         function generateRandomStage() {
+            cleanupOldStages();
+
             const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
             const stageColor = colors[Math.floor(Math.random() * colors.length)];
             
@@ -362,6 +413,46 @@
 
 
             nextStageStart.set(curX, curY, curZ - 6);
+
+            // Spawn enemies on the platforms of the new stage
+            spawnEnemiesForStage(currentStage);
+        }
+
+        function spawnEnemiesForStage(stageNum) {
+            if (!enemyModel) return; // If model hasn't loaded yet
+
+            // Filter platforms from this stage that are suitable for enemies
+            const stagePlatforms = platforms.filter(p => p.stage === stageNum && p.type === 'normal' && p.width > 2 && p.depth > 2);
+
+            // Limit number of enemies per stage based on stage number
+            const maxEnemies = Math.min(3 + Math.floor(stageNum / 2), stagePlatforms.length);
+
+            // Shuffle and pick platforms
+            const selectedPlatforms = stagePlatforms.sort(() => 0.5 - Math.random()).slice(0, maxEnemies);
+
+            selectedPlatforms.forEach(p => {
+                // Determine spawn pos on top of the platform
+                const spawnY = p.mesh.position.y + (p.height / 2);
+
+                const enemyObj = THREE.SkeletonUtils.clone(enemyModel);
+                // Scale enemy appropriately
+                enemyObj.scale.set(0.08, 0.08, 0.08);
+                enemyObj.position.set(p.mesh.position.x, spawnY, p.mesh.position.z);
+
+                scene.add(enemyObj);
+
+                const enemyData = {
+                    mesh: enemyObj,
+                    platform: p,
+                    stage: stageNum,
+                    speed: 0.03 + (Math.random() * 0.02), // Patrol speed
+                    direction: 1, // 1 for right/forward, -1 for left/backward
+                    patrolAxis: Math.random() > 0.5 ? 'x' : 'z', // Patrol along x or z
+                    startPos: p.mesh.position.clone()
+                };
+
+                activeEnemies.push(enemyData);
+            });
         }
 
         // Helper function to update camera position based on player position and Euler angle
@@ -452,6 +543,21 @@
 
             // --- Camera Snap Fix ---
             updateCameraPosition();
+
+            // Load enemy model
+            const loader = new THREE.GLTFLoader();
+            loader.load('/enemy.glb', function (gltf) {
+                enemyModel = gltf.scene;
+                // Pre-process shadows
+                enemyModel.traverse(function (child) {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+            }, undefined, function (error) {
+                console.error('Error loading enemy.glb:', error);
+            });
 
             animate();
         }
@@ -883,12 +989,62 @@
 
 
             checkPhysics(dt);
+            updateEnemies(dt);
             updateAnimation(time);
 
 
             // Ensure camera update runs every frame during the active game loop
             updateCameraPosition();
             renderer.render(scene, camera);
+        }
+
+        function updateEnemies(dt) {
+            // Remove the early return so enemies patrol even if player is jumping
+            // if (!isGrounded && !isClimbing) return;
+
+            const playerRadius = 0.4;
+            const enemyRadius = 0.5; // Hitbox size roughly
+
+            activeEnemies.forEach(enemy => {
+                // 1. Patrol Movement
+                const axis = enemy.patrolAxis;
+                const p = enemy.platform;
+
+                // Calculate patrol bounds based on platform dimensions
+                const maxDist = (axis === 'x' ? p.width / 2 : p.depth / 2) - 0.5;
+
+                enemy.mesh.position[axis] += enemy.speed * enemy.direction * (dt * 60);
+
+                // Reverse direction if reaching edge of platform
+                if (Math.abs(enemy.mesh.position[axis] - enemy.startPos[axis]) > maxDist) {
+                    enemy.direction *= -1;
+                    // Snap back inside bounds slightly
+                    enemy.mesh.position[axis] = enemy.startPos[axis] + (maxDist * enemy.direction * 0.99);
+                }
+
+                // Rotate to face movement direction
+                if (axis === 'x') {
+                    enemy.mesh.rotation.y = enemy.direction === 1 ? Math.PI / 2 : -Math.PI / 2;
+                } else {
+                    enemy.mesh.rotation.y = enemy.direction === 1 ? 0 : Math.PI;
+                }
+
+                // 2. Collision with Player
+                // Simple cylinder-ish overlap check
+                const dx = playerMesh.position.x - enemy.mesh.position.x;
+                const dz = playerMesh.position.z - enemy.mesh.position.z;
+                const distSq = dx*dx + dz*dz;
+
+                const dy = playerMesh.position.y - enemy.mesh.position.y;
+
+                // If close horizontally and vertically overlapping
+                if (distSq < (playerRadius + enemyRadius) * (playerRadius + enemyRadius)) {
+                     // Check vertical overlap (enemy is approx 1.8 units tall scaled)
+                     if (dy > -1.0 && dy < 1.5) {
+                         respawn('death');
+                     }
+                }
+            });
         }
 
 
