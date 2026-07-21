@@ -131,11 +131,14 @@
     <audio id="sfx-death" src="death.mp3"></audio>
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
+    <audio id="sfx-pistol" src="pistol.mp3"></audio>
+    <audio id="sfx-enemy-shoot" src="enemy_shoot.mp3"></audio>
 
 
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
 
     <script>
@@ -201,6 +204,8 @@
         const sfxDeath = document.getElementById('sfx-death');
         const sfxFire = document.getElementById('sfx-fire');
         const sfxWalk = document.getElementById('sfx-walk');
+        const sfxPistol = document.getElementById('sfx-pistol');
+        const sfxEnemyShoot = document.getElementById('sfx-enemy-shoot');
         
         if(sfxWalk) sfxWalk.volume = 0.4; 
 
@@ -261,9 +266,59 @@
         document.getElementById('radio-prev').addEventListener('click', (e) => { e.stopPropagation(); prevTrack(); });
 
 
+
+        // Asset loading
+        const gltfLoader = new THREE.GLTFLoader();
+        let enemyModel = null;
+        let pistolModel = null;
+
+        gltfLoader.load('enemy.glb', (gltf) => {
+            enemyModel = gltf.scene;
+        });
+
+        gltfLoader.load('pistol.glb', (gltf) => {
+            pistolModel = gltf.scene;
+            pistolModel.scale.set(0.1, 0.1, 0.1);
+            pistolModel.position.set(0.25, -0.2, -0.5);
+            pistolModel.rotation.y = Math.PI;
+
+            // Add pistol to camera for FPS view
+            if (camera) {
+                camera.add(pistolModel);
+            }
+        });
+
+        // Global variables for enemies and projectiles
+        let enemies = [];
+        let projectiles = [];
+        let playerHealth = 100;
+
         init();
         
         // --- Level Generation Functions ---
+
+        function spawnEnemy(x, y, z) {
+            if (!enemyModel) return;
+            const enemy = THREE.SkeletonUtils.clone(enemyModel);
+            enemy.position.set(x, y, z);
+            enemy.scale.set(0.04, 0.04, 0.04);
+
+            // Add a bounding box for simple hit detection
+            const hitBox = new THREE.Mesh(
+                new THREE.BoxGeometry(1.5, 3, 1.5),
+                new THREE.MeshBasicMaterial({ visible: false })
+            );
+            hitBox.position.y = 1.5;
+            enemy.add(hitBox);
+
+            scene.add(enemy);
+            enemies.push({
+                mesh: enemy,
+                hitBox: hitBox,
+                lastShotTime: Date.now() + Math.random() * 2000
+            });
+        }
+
         function createPlatform(x, y, z, w, h, d, color, type = 'normal') {
             const geometry = new THREE.BoxGeometry(w, h, d);
             const material = new THREE.MeshLambertMaterial({ color: color });
@@ -289,6 +344,14 @@
 
 
         function generateRandomStage() {
+            // Cleanup old enemies
+            enemies.forEach(e => {
+                scene.remove(e.mesh);
+                // We do NOT dispose geometry/material here because SkeletonUtils.clone()
+                // shares the base geometry and material. Disposing them would make future enemies invisible.
+            });
+            enemies = [];
+
             const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
             const stageColor = colors[Math.floor(Math.random() * colors.length)];
             
@@ -321,6 +384,11 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+
+                    if (Math.random() < 0.4) {
+                        spawnEnemy(curX, curY + 0.5, curZ);
+                    }
+
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -448,6 +516,40 @@
                 document.body.requestPointerLock();
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
+
+        document.addEventListener('mousedown', (event) => {
+            if (!isLocked) return;
+
+            // Play sound
+            if (sfxPistol) {
+                sfxPistol.currentTime = 0;
+                sfxPistol.play().catch(e => {});
+            }
+
+            // Recoil animation on pistol
+            if (pistolModel) {
+                pistolModel.position.z += 0.1;
+                setTimeout(() => { pistolModel.position.z -= 0.1; }, 100);
+            }
+
+            // Raycast
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+            const hitTargets = enemies.map(e => e.hitBox);
+            const intersects = raycaster.intersectObjects(hitTargets, false);
+
+            if (intersects.length > 0) {
+                const hitObj = intersects[0].object;
+                const enemyIdx = enemies.findIndex(e => e.hitBox === hitObj);
+                if (enemyIdx !== -1) {
+                    const e = enemies[enemyIdx];
+                    scene.remove(e.mesh);
+                    enemies.splice(enemyIdx, 1);
+                }
+            }
+        });
+
             document.addEventListener('mousemove', onMouseMove);
 
             // --- Camera Snap Fix ---
@@ -570,7 +672,10 @@
 
 
         // --- Physics Loop ---
+
         function respawn(type) {
+            playerHealth = 100;
+
             playerMesh.position.copy(spawnPoint);
             playerVelocity.set(0, 0, 0);
             momentum.set(0, 0, 0);
@@ -886,7 +991,39 @@
             updateAnimation(time);
 
 
+
+            // Enemy Combat Logic
+            const now = Date.now();
+            enemies.forEach(e => {
+                // Look at player
+                e.mesh.lookAt(playerMesh.position.x, e.mesh.position.y, playerMesh.position.z);
+
+                // Check if can shoot
+                if (now > e.lastShotTime) {
+                    const dist = e.mesh.position.distanceTo(playerMesh.position);
+                    if (dist < 20) {
+                        e.lastShotTime = now + 1500 + Math.random() * 1000; // Shoot every 1.5 - 2.5s
+
+                        if (sfxEnemyShoot) {
+                            sfxEnemyShoot.currentTime = 0;
+                            sfxEnemyShoot.play().catch(err => {});
+                        }
+
+                        // Simple 30% chance to hit player
+                        if (Math.random() < 0.3) {
+                            playerHealth -= 25;
+                            const overlay = document.getElementById('damage-overlay') || document.body;
+
+                            if (playerHealth <= 0) {
+                                respawn('death');
+                            }
+                        }
+                    }
+                }
+            });
+
             // Ensure camera update runs every frame during the active game loop
+
             updateCameraPosition();
             renderer.render(scene, camera);
         }
