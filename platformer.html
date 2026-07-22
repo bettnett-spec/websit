@@ -131,11 +131,13 @@
     <audio id="sfx-death" src="death.mp3"></audio>
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
+    <audio id="sfx-pistol" src="pistol.mp3"></audio>
 
 
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
 
     <script>
@@ -152,9 +154,15 @@
         let camera, scene, renderer;
         let playerMesh; // Player Group (root of the character)
         let platforms = [];
+        let enemies = [];
+        let hazards = [];
         let clock; 
         let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
         
+        // Models
+        let enemyModel = null;
+        let pistolModel = null;
+
         // Physics State
         let playerVelocity = new THREE.Vector3();
         let momentum = new THREE.Vector3(); 
@@ -329,7 +337,8 @@
                     const lavaCount = Math.floor(len / 4); 
                     for(let k=0; k<lavaCount; k++) {
                         const lZ = curZ - (k * 4) - 2;
-                        createPlatform(curX, curY + 0.6, lZ, 3.5, 0.2, 1.0, 0xff0000, 'lava');
+                        const pLava = createPlatform(curX, curY + 0.6, lZ, 3.5, 0.2, 1.0, 0xff0000, 'lava');
+                        hazards.push(pLava);
                     }
                     curZ -= len;
                 }
@@ -350,6 +359,25 @@
                 }
             }
 
+
+
+            // Randomly spawn an enemy
+            if (enemyModel && Math.random() < 0.6) {
+                const enemyMesh = THREE.SkeletonUtils.clone(enemyModel);
+                enemyMesh.scale.set(0.06, 0.06, 0.06);
+                // Position enemy slightly above platform
+                enemyMesh.position.set(curX, curY + 0.5, curZ);
+
+                // Add collision bounds (simple box)
+                const enemyBox = new THREE.Box3().setFromObject(enemyMesh);
+
+                scene.add(enemyMesh);
+                enemies.push({
+                    mesh: enemyMesh,
+                    box: enemyBox,
+                    stage: currentStage
+                });
+            }
 
             curZ -= 4;
             createPlatform(curX, curY, curZ - 3, 8, 1, 6, 0x00FF00, 'checkpoint');
@@ -396,6 +424,25 @@
 
             // 1. Scene Setup
             scene = new THREE.Scene();
+
+            // Load Models
+            const loader = new THREE.GLTFLoader();
+            loader.load('enemy.glb', (gltf) => {
+                enemyModel = gltf.scene;
+            });
+            loader.load('pistol.glb', (gltf) => {
+                pistolModel = gltf.scene;
+                if (playerMesh) {
+                    pistolModel.scale.set(0.1, 0.1, 0.1);
+                    pistolModel.position.set(0.5, -0.3, -0.6);
+                    pistolModel.rotation.y = Math.PI / 2;
+
+                    const weaponContainer = new THREE.Group();
+                    weaponContainer.add(pistolModel);
+                    camera.add(weaponContainer);
+                    scene.add(camera);
+                }
+            });
             scene.background = new THREE.Color(0x87CEEB); 
             scene.fog = new THREE.Fog(0x87CEEB, 20, 150);
 
@@ -437,6 +484,32 @@
             document.addEventListener('wheel', onScroll); 
             window.addEventListener('resize', onWindowResize);
             
+            // Combat mechanics
+            const sfxPistol = document.getElementById('sfx-pistol');
+            document.addEventListener('mousedown', (event) => {
+                if (!isLocked) return;
+
+                // Play sound
+                if (sfxPistol) {
+                    sfxPistol.currentTime = 0;
+                    sfxPistol.play().catch(e => {});
+                }
+
+                // Raycast to find enemies
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    const enemyObj = enemies[i];
+                    const box = new THREE.Box3().setFromObject(enemyObj.mesh);
+                    if (raycaster.ray.intersectsBox(box)) {
+                        scene.remove(enemyObj.mesh);
+                        enemies.splice(i, 1);
+                        break;
+                    }
+                }
+            });
+
             instructions.addEventListener('click', function() {
                 if(sfxJump) { 
                     sfxJump.play().then(() => {
@@ -776,6 +849,42 @@
             if(!p.triggered) {
                 p.triggered = true;
                 spawnPoint.set(p.mesh.position.x, p.mesh.position.y + 0.5 + 2, p.mesh.position.z);
+
+                // Cleanup old objects to prevent memory leaks
+                const oldStage = currentStage;
+
+                // Remove platforms from older stages (keep checkpoint)
+                for (let i = platforms.length - 1; i >= 0; i--) {
+                    if (platforms[i].stage < oldStage && platforms[i] !== p) {
+                        scene.remove(platforms[i].mesh);
+                        if (platforms[i].mesh.geometry) platforms[i].mesh.geometry.dispose();
+                        if (platforms[i].mesh.material) platforms[i].mesh.material.dispose();
+                        platforms.splice(i, 1);
+                    }
+                }
+
+                // Remove old enemies
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    if (enemies[i].stage < oldStage) {
+                        scene.remove(enemies[i].mesh);
+                        // Do not dispose geometry/material for cloned objects via SkeletonUtils to prevent breaking shared resources
+                        enemies.splice(i, 1);
+                    }
+                }
+
+                // Remove old hazards
+                for (let i = hazards.length - 1; i >= 0; i--) {
+                    // Check if hazard is part of old platforms list
+                    let found = false;
+                    for (let j=0; j<platforms.length; j++) {
+                        if (platforms[j].mesh === hazards[i]) found = true;
+                    }
+                    if (!found) {
+                        // Hazard no longer in platforms list, remove it
+                        hazards.splice(i, 1);
+                    }
+                }
+
                 generateRandomStage();
                 currentStage++;
                 document.getElementById('stage-display').innerText = currentStage;
@@ -885,6 +994,31 @@
             checkPhysics(dt);
             updateAnimation(time);
 
+            // Enemy Logic (Combat AI)
+            for (let i = 0; i < enemies.length; i++) {
+                const enemy = enemies[i];
+                if (!enemy.mesh) continue;
+
+                const distToPlayer = enemy.mesh.position.distanceTo(playerMesh.position);
+
+                // Look at player
+                enemy.mesh.lookAt(playerMesh.position.x, enemy.mesh.position.y, playerMesh.position.z);
+
+                if (distToPlayer < 10) {
+                    // Move towards player
+                    const dir = new THREE.Vector3().subVectors(playerMesh.position, enemy.mesh.position);
+                    dir.y = 0;
+                    if (dir.lengthSq() > 0) {
+                        dir.normalize();
+                        enemy.mesh.position.add(dir.multiplyScalar(0.04));
+                    }
+                }
+
+                // Damage Player on touch
+                if (distToPlayer < 1.0) {
+                    respawn('death');
+                }
+            }
 
             // Ensure camera update runs every frame during the active game loop
             updateCameraPosition();
