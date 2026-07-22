@@ -1,0 +1,40 @@
+127.0.0.1 - - [22/Jul/2026 02:07:18] "GET /shooter.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:18] code 404, message File not found
+127.0.0.1 - - [22/Jul/2026 02:07:18] "GET /index.css HTTP/1.1" 404 -
+127.0.0.1 - - [22/Jul/2026 02:07:18] code 404, message File not found
+127.0.0.1 - - [22/Jul/2026 02:07:18] "GET /index.tsx HTTP/1.1" 404 -
+127.0.0.1 - - [22/Jul/2026 02:07:19] "GET /akm.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:19] "GET /pistol.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:19] "GET /enemy_shoot.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:19] "GET /ding.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:19] "GET /map.glb HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:19] "GET /akm.glb HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:19] "GET /pistol.glb HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:19] "GET /hands.glb HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:19] "GET /enemy.glb HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:36] "GET /platformer.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:37] "GET /jump.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:37] "GET /checkpoint.wav HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:37] "GET /death.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:37] "GET /firedeath.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:07:37] "GET /walk.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:28] "GET /shooter.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:28] code 404, message File not found
+127.0.0.1 - - [22/Jul/2026 02:08:28] "GET /index.css HTTP/1.1" 404 -
+127.0.0.1 - - [22/Jul/2026 02:08:28] code 404, message File not found
+127.0.0.1 - - [22/Jul/2026 02:08:28] "GET /index.tsx HTTP/1.1" 404 -
+127.0.0.1 - - [22/Jul/2026 02:08:28] "GET /akm.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:28] "GET /akm.glb HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:28] "GET /map.glb HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:28] "GET /pistol.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:28] "GET /ding.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:28] "GET /enemy_shoot.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:28] "GET /pistol.glb HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:28] "GET /hands.glb HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:28] "GET /enemy.glb HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:40] "GET /platformer.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:40] "GET /jump.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:40] "GET /checkpoint.wav HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:40] "GET /death.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:40] "GET /firedeath.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [22/Jul/2026 02:08:40] "GET /walk.mp3 HTTP/1.1" 200 -
