@@ -136,6 +136,7 @@
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
 
     <script>
@@ -150,6 +151,13 @@
         
         // --- Global Variables ---
         let camera, scene, renderer;
+        let enemies = [];
+        let enemyModel = null;
+        let weapons = { hands: null, pistol: null, akm: null };
+        let activeWeapon = 'hands';
+        let weaponContainer = null;
+        let lastShootTime = 0;
+        let activeHazards = [];
         let playerMesh; // Player Group (root of the character)
         let platforms = [];
         let clock; 
@@ -289,6 +297,11 @@
 
 
         function generateRandomStage() {
+            // Cleanup old enemies
+            enemies.forEach(e => {
+                scene.remove(e.mesh);
+            });
+            enemies = [];
             const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
             const stageColor = colors[Math.floor(Math.random() * colors.length)];
             
@@ -351,6 +364,17 @@
             }
 
 
+            // Spawn enemies on the level
+            for(let i=0; i<obstaclesCount; i++) {
+                if(enemyModel && Math.random() < 0.5) {
+                    const clonedMesh = THREE.SkeletonUtils.clone(enemyModel);
+                    clonedMesh.scale.set(0.06, 0.06, 0.06);
+                    clonedMesh.position.set(curX + (Math.random()-0.5)*2, curY + 1.5, curZ + (Math.random()*10));
+                    scene.add(clonedMesh);
+                    enemies.push({ mesh: clonedMesh, hp: 100, dead: false });
+                }
+            }
+
             curZ -= 4;
             createPlatform(curX, curY, curZ - 3, 8, 1, 6, 0x00FF00, 'checkpoint');
             
@@ -390,6 +414,49 @@
         }
 
         
+        // --- Asset Loading ---
+        function loadAssets() {
+            const loader = new THREE.GLTFLoader();
+            loader.load('enemy.glb', function(gltf) {
+                enemyModel = gltf.scene;
+                enemyModel.traverse(child => { if(child.isMesh) child.castShadow = true; });
+            });
+
+            weaponContainer = new THREE.Group();
+            camera.add(weaponContainer);
+
+            loader.load('hands.glb', function(gltf) {
+                weapons.hands = gltf.scene;
+                weapons.hands.scale.set(0.1, 0.1, 0.1);
+                weapons.hands.rotation.y = 1.57;
+                weapons.hands.position.set(0.0, -0.5, -0.6);
+                weaponContainer.add(weapons.hands);
+                updateWeaponVisibility();
+            });
+            loader.load('pistol.glb', function(gltf) {
+                weapons.pistol = gltf.scene;
+                weapons.pistol.scale.set(0.1, 0.1, 0.1);
+                weapons.pistol.rotation.y = 1.57;
+                weapons.pistol.position.set(0.25, -0.5, -0.6);
+                weaponContainer.add(weapons.pistol);
+                updateWeaponVisibility();
+            });
+            loader.load('akm.glb', function(gltf) {
+                weapons.akm = gltf.scene;
+                weapons.akm.scale.set(0.1, 0.1, 0.1);
+                weapons.akm.rotation.y = 1.57;
+                weapons.akm.position.set(0.25, -0.5, -0.6);
+                weaponContainer.add(weapons.akm);
+                updateWeaponVisibility();
+            });
+        }
+
+        function updateWeaponVisibility() {
+            if(weapons.hands) weapons.hands.visible = (activeWeapon === 'hands');
+            if(weapons.pistol) weapons.pistol.visible = (activeWeapon === 'pistol');
+            if(weapons.akm) weapons.akm.visible = (activeWeapon === 'akm');
+        }
+
         // --- Core Initialization ---
         function init() {
             clock = new THREE.Clock();
@@ -423,6 +490,8 @@
             dirLight.shadow.mapSize.height = 2048;
             scene.add(dirLight);
 
+            scene.add(camera);
+            loadAssets();
             // 5. Create Player (Original Blocky)
             createPlayer();
 
@@ -449,6 +518,7 @@
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
             document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mousedown', onMouseDown);
 
             // --- Camera Snap Fix ---
             updateCameraPosition();
@@ -521,7 +591,10 @@
                 case 'Space': 
                     isSpacePressed = true;
                     break;
-                case 'KeyR': respawn('fall'); break; 
+                case 'KeyR': respawn('fall'); break;
+                case 'Digit1': activeWeapon = 'hands'; updateWeaponVisibility(); break;
+                case 'Digit2': activeWeapon = 'pistol'; updateWeaponVisibility(); break;
+                case 'Digit3': activeWeapon = 'akm'; updateWeaponVisibility(); break;
             }
         }
 
@@ -543,6 +616,67 @@
             cameraZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, cameraZoom));
         }
 
+
+        let isMouseDown = false;
+
+        document.addEventListener('mouseup', () => { isMouseDown = false; });
+
+        function onMouseDown(event) {
+            if(!isLocked || event.button !== 0) return;
+            isMouseDown = true;
+            checkShoot();
+        }
+
+        function checkShoot() {
+            if(!isLocked || !isMouseDown) return;
+            const now = Date.now();
+            let fireRate = 500;
+            if(activeWeapon === 'pistol') fireRate = 300;
+            if(activeWeapon === 'akm') fireRate = 100;
+
+            if(now - lastShootTime > fireRate) {
+                lastShootTime = now;
+                shoot();
+                if(activeWeapon === 'akm') {
+                    setTimeout(checkShoot, fireRate);
+                }
+            }
+        }
+
+        function shoot() {
+            // Weapon kick animation
+            const weapon = weapons[activeWeapon];
+            if(weapon) {
+                weapon.position.z += 0.05;
+                setTimeout(() => { weapon.position.z -= 0.05; }, 100);
+            }
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            if(activeWeapon === 'hands') raycaster.far = 4;
+            else raycaster.far = 100;
+
+            const enemyMeshes = enemies.map(e => e.mesh);
+            const intersects = raycaster.intersectObjects(enemyMeshes, true);
+            if(intersects.length > 0) {
+                let hitObj = intersects[0].object;
+                let enemyEntry = enemies.find(e => {
+                    let p = hitObj;
+                    while(p) {
+                        if(p === e.mesh) return true;
+                        p = p.parent;
+                    }
+                    return false;
+                });
+                if(enemyEntry) {
+                    enemyEntry.hp -= (activeWeapon === 'akm' ? 34 : (activeWeapon === 'pistol' ? 50 : 25));
+                    if(enemyEntry.hp <= 0 && !enemyEntry.dead) {
+                        enemyEntry.dead = true;
+                        scene.remove(enemyEntry.mesh);
+                    }
+                }
+            }
+        }
 
         function pointerLockChange() {
             if (document.pointerLockElement === document.body) {
@@ -887,6 +1021,25 @@
 
 
             // Ensure camera update runs every frame during the active game loop
+            // Enemy behavior
+            enemies.forEach(enemy => {
+                if(!enemy.dead) {
+                    const dist = playerMesh.position.distanceTo(enemy.mesh.position);
+                    if(dist < 15) {
+                        // Move towards player
+                        const dir = new THREE.Vector3().subVectors(playerMesh.position, enemy.mesh.position).normalize();
+                        dir.y = 0; // Keep on ground roughly
+                        enemy.mesh.position.add(dir.multiplyScalar(0.05 * timeScale));
+                        enemy.mesh.lookAt(playerMesh.position.x, enemy.mesh.position.y, playerMesh.position.z);
+
+                        // Collision damage/knockback
+                        if(dist < 1.0) {
+                            respawn('fall'); // "combat mechanics" - enemy touching you kills you for now, like a hazard
+                        }
+                    }
+                }
+            });
+
             updateCameraPosition();
             renderer.render(scene, camera);
         }
