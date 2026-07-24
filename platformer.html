@@ -131,14 +131,20 @@
     <audio id="sfx-death" src="death.mp3"></audio>
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
+    <audio id="sfx-pistol" src="pistol.mp3"></audio>
+    <audio id="sfx-enemy" src="enemy_shoot.mp3"></audio>
 
 
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
 
     <script>
+
+        const ASSETS = { enemy: null, pistol: null };
+        const enemies = [];
         // --- Game Constants ---
         const PLAYER_HEIGHT = 1.6; 
         const PLAYER_SPEED_RUN = 0.22; 
@@ -201,6 +207,8 @@
         const sfxDeath = document.getElementById('sfx-death');
         const sfxFire = document.getElementById('sfx-fire');
         const sfxWalk = document.getElementById('sfx-walk');
+        const sfxPistol = document.getElementById('sfx-pistol');
+        const sfxEnemy = document.getElementById('sfx-enemy');
         
         if(sfxWalk) sfxWalk.volume = 0.4; 
 
@@ -350,6 +358,26 @@
                 }
             }
 
+            if (ASSETS.enemy && Math.random() < 0.5) {
+                const enemyMesh = THREE.SkeletonUtils.clone(ASSETS.enemy);
+                enemyMesh.position.set(curX, curY + 1.0, curZ + 2);
+                scene.add(enemyMesh);
+
+                const boxGeo = new THREE.BoxGeometry(1.2, 2.0, 1.2);
+                const boxMat = new THREE.MeshBasicMaterial({ visible: false });
+                const box = new THREE.Mesh(boxGeo, boxMat);
+                box.position.set(curX, curY + 1.0, curZ + 2);
+                scene.add(box);
+
+                enemies.push({
+                    mesh: enemyMesh,
+                    hitbox: box,
+                    stage: currentStage + 1,
+                    lastShot: 0
+                });
+            }
+
+
 
             curZ -= 4;
             createPlatform(curX, curY, curZ - 3, 8, 1, 6, 0x00FF00, 'checkpoint');
@@ -426,6 +454,25 @@
             // 5. Create Player (Original Blocky)
             createPlayer();
 
+
+            // 5b. Load Assets
+            const manager = new THREE.LoadingManager();
+            const gltfLoader = new THREE.GLTFLoader(manager);
+
+            gltfLoader.load('enemy.glb', (gltf) => {
+                ASSETS.enemy = gltf.scene;
+                ASSETS.enemy.scale.set(0.06, 0.06, 0.06);
+            });
+
+            gltfLoader.load('pistol.glb', (gltf) => {
+                ASSETS.pistol = gltf.scene;
+                ASSETS.pistol.scale.set(0.1, 0.1, 0.1);
+                ASSETS.pistol.position.set(0.25, -0.2, -0.5);
+                ASSETS.pistol.rotation.y = Math.PI;
+                camera.add(ASSETS.pistol);
+                scene.add(camera); // Ensure camera is in scene
+            });
+
             // 6. Create Initial Level
             createPlatform(0, 0, 0, 10, 1, 10, 0xaaaaaa, 'spawn'); 
             nextStageStart.set(0, 0, -5); 
@@ -449,6 +496,39 @@
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
             document.addEventListener('mousemove', onMouseMove);
+
+            document.addEventListener('mousedown', (event) => {
+                if (!isLocked || !ASSETS.pistol) return;
+
+                // Play Sound
+                if (sfxPistol) {
+                    sfxPistol.currentTime = 0;
+                    sfxPistol.play().catch(e => {});
+                }
+
+                // Animate pistol
+                ASSETS.pistol.position.z += 0.1;
+                setTimeout(() => ASSETS.pistol.position.z -= 0.1, 100);
+
+                // Raycast
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+                const hitboxes = enemies.map(e => e.hitbox);
+                const intersects = raycaster.intersectObjects(hitboxes);
+
+                if (intersects.length > 0) {
+                    const hit = intersects[0].object;
+                    const enemyIdx = enemies.findIndex(e => e.hitbox === hit);
+                    if (enemyIdx !== -1) {
+                        const enemy = enemies[enemyIdx];
+                        scene.remove(enemy.mesh);
+                        scene.remove(enemy.hitbox);
+                        enemies.splice(enemyIdx, 1);
+                    }
+                }
+            });
+
 
             // --- Camera Snap Fix ---
             updateCameraPosition();
@@ -579,6 +659,8 @@
             // SFX
             if (type === 'fire') {
                 if(sfxFire) { sfxFire.currentTime = 0; sfxFire.play().catch(e => {}); }
+            } else if (type === 'enemy') {
+                if(sfxDeath) { sfxDeath.currentTime = 0; sfxDeath.play().catch(e => {}); }
             } else {
                 if(sfxDeath) { sfxDeath.currentTime = 0; sfxDeath.play().catch(e => {}); }
             }
@@ -779,6 +861,28 @@
                 generateRandomStage();
                 currentStage++;
                 document.getElementById('stage-display').innerText = currentStage;
+
+                // Cleanup old platforms
+                for (let i = platforms.length - 1; i >= 0; i--) {
+                    const plat = platforms[i];
+                    if (plat.stage < currentStage - 1) {
+                        scene.remove(plat.mesh);
+                        plat.mesh.geometry.dispose();
+                        plat.mesh.material.dispose();
+                        platforms.splice(i, 1);
+                    }
+                }
+
+                // Cleanup old enemies
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    const enemy = enemies[i];
+                    if (enemy.stage < currentStage - 1) {
+                        scene.remove(enemy.mesh);
+                        scene.remove(enemy.hitbox);
+                        // Do not dispose of SkinnedMesh resources cloned by SkeletonUtils
+                        enemies.splice(i, 1);
+                    }
+                }
                 const msg = document.getElementById('checkpoint-msg');
                 msg.style.opacity = 1;
                 setTimeout(() => { msg.style.opacity = 0; }, 2000);
@@ -886,6 +990,40 @@
             updateAnimation(time);
 
 
+
+            const now = Date.now();
+            for (let i = 0; i < enemies.length; i++) {
+                const enemy = enemies[i];
+                if (!enemy || !enemy.mesh) continue;
+
+                // Look at player (Y level adjusted to ignore vertical differences)
+                enemy.mesh.lookAt(playerMesh.position.x, enemy.mesh.position.y, playerMesh.position.z);
+
+                const dist = enemy.mesh.position.distanceTo(playerMesh.position);
+                if (dist < 25 && now - enemy.lastShot > 2000) {
+                    enemy.lastShot = now;
+
+                    // Raycast to player
+                    const raycaster = new THREE.Raycaster();
+                    const startPos = enemy.mesh.position.clone();
+                    startPos.y += 1.0;
+                    const endPos = playerMesh.position.clone();
+                    const dir = new THREE.Vector3().subVectors(endPos, startPos).normalize();
+                    raycaster.set(startPos, dir);
+
+                    const platformMeshes = platforms.map(p => p.mesh);
+                    const intersects = raycaster.intersectObjects(platformMeshes);
+
+                    // If no platform is between enemy and player, player takes damage
+                    if (intersects.length === 0 || intersects[0].distance > dist) {
+                        if (sfxEnemy) {
+                            sfxEnemy.currentTime = 0;
+                            sfxEnemy.play().catch(e => {});
+                        }
+                        respawn('enemy');
+                    }
+                }
+            }
             // Ensure camera update runs every frame during the active game loop
             updateCameraPosition();
             renderer.render(scene, camera);
