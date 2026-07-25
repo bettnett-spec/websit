@@ -99,7 +99,7 @@
 <body>
 
 
-    <div id="info">Stage: <span id="stage-display">1</span></div>
+    <div id="info">Stage: <span id="stage-display">1</span> | Health: <span id="health-display">100</span>%</div>
     <div id="checkpoint-msg">CHECKPOINT! NEXT LEVEL GENERATED</div>
     <div id="crosshair"></div>
 
@@ -136,6 +136,7 @@
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
 
     <script>
@@ -174,6 +175,14 @@
         let currentStage = 1;
         let nextStageStart = new THREE.Vector3(0, 0, 0); 
         let stageDirection = new THREE.Vector3(0, 0, -1); 
+        let playerHealth = 100;
+        let enemyModel = null;
+        let weaponModel = null;
+        let enemies = [];
+        const weaponSound = new Audio('akm.mp3');
+        const enemySound = new Audio('enemy_shoot.mp3');
+        weaponSound.volume = 0.5;
+        enemySound.volume = 0.5;
         
         // Input State
         let moveForward = false;
@@ -182,6 +191,8 @@
         let moveRight = false;
         let isShiftPressed = false;
         let isSpacePressed = false;
+        let isMouseDown = false;
+        let lastShootTime = 0;
         
         // Camera State
         let euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -321,6 +332,20 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+
+                    // Chance to spawn enemy
+                    if (Math.random() < 0.5 && enemyModel && typeof THREE.SkeletonUtils !== 'undefined') {
+                        const enemyMesh = THREE.SkeletonUtils.clone(enemyModel);
+                        enemyMesh.scale.set(0.06, 0.06, 0.06);
+                        enemyMesh.position.set(curX, curY + 0.5, curZ);
+                        scene.add(enemyMesh);
+                        enemies.push({
+                            mesh: enemyMesh,
+                            lastShot: 0,
+                            stage: currentStage
+                        });
+                    }
+
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -435,6 +460,11 @@
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
             document.addEventListener('wheel', onScroll); 
+            document.addEventListener('mousedown', (e) => {
+                if (!isLocked) return;
+                isMouseDown = true;
+            });
+            document.addEventListener('mouseup', () => { isMouseDown = false; });
             window.addEventListener('resize', onWindowResize);
             
             instructions.addEventListener('click', function() {
@@ -571,6 +601,9 @@
 
         // --- Physics Loop ---
         function respawn(type) {
+            playerHealth = 100;
+            const hd = document.getElementById('health-display');
+            if(hd) hd.innerText = playerHealth;
             playerMesh.position.copy(spawnPoint);
             playerVelocity.set(0, 0, 0);
             momentum.set(0, 0, 0);
@@ -789,6 +822,79 @@
             }
         }
 
+        // --- Resource Loading ---
+        const gltfLoader = new THREE.GLTFLoader();
+        gltfLoader.load('enemy.glb', (gltf) => {
+            enemyModel = gltf.scene;
+        });
+        gltfLoader.load('akm.glb', (gltf) => {
+            weaponModel = gltf.scene;
+            weaponModel.scale.set(0.1, 0.1, 0.1);
+            weaponModel.rotation.y = Math.PI / 2;
+            weaponModel.position.set(0.25, -0.2, -0.5);
+            camera.add(weaponModel);
+        });
+
+        let muzzleLight = null;
+        function checkPlayerShoot() {
+            if (!isLocked || !weaponModel) return;
+            const now = Date.now();
+
+            // 100ms fire rate
+            if (now - lastShootTime > 100) {
+                lastShootTime = now;
+
+                // Audio
+                weaponSound.currentTime = 0;
+                weaponSound.play().catch(e=>{});
+
+                // Muzzle Flash
+                if (!muzzleLight) {
+                    muzzleLight = new THREE.PointLight(0xffff00, 2, 5);
+                    muzzleLight.position.set(0, 0.1, -0.8);
+                    camera.add(muzzleLight);
+                } else {
+                    muzzleLight.intensity = 2;
+                }
+                setTimeout(() => { if (muzzleLight) muzzleLight.intensity = 0; }, 50);
+
+                // Recoil animation
+                weaponModel.position.z += 0.05;
+                setTimeout(() => { if(weaponModel) weaponModel.position.z -= 0.05; }, 50);
+
+                // Raycast
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                raycaster.far = 50;
+
+                // Enemies array will be defined in the next step, but we prepare the raycast target
+                if (typeof enemies !== 'undefined') {
+                    const enemyMeshes = enemies.map(e => e.mesh);
+                    const intersects = raycaster.intersectObjects(enemyMeshes, true);
+
+                    if (intersects.length > 0) {
+                        const hit = intersects[0];
+                        // Find which enemy we hit
+                        const enemy = enemies.find(e => {
+                            let p = hit.object;
+                            while(p) {
+                                if (p === e.mesh) return true;
+                                p = p.parent;
+                            }
+                            return false;
+                        });
+
+                        if (enemy) {
+                            // Destroy enemy
+                            scene.remove(enemy.mesh);
+                            const idx = enemies.indexOf(enemy);
+                            if (idx > -1) enemies.splice(idx, 1);
+                        }
+                    }
+                }
+            }
+        }
+
         // The animate loop starts only after init() resolves
         function animate() {
             requestAnimationFrame(animate);
@@ -796,6 +902,71 @@
             const dt = clock.getDelta();
             const timeScale = Math.min(dt * 60, 4);
             const time = Date.now() / 1000;
+
+            if (isMouseDown) {
+                checkPlayerShoot();
+            }
+
+            // Enemy AI
+            if (typeof enemies !== 'undefined' && isPlayerLoaded) {
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    const enemy = enemies[i];
+                    const dist = enemy.mesh.position.distanceTo(playerMesh.position);
+                    enemy.mesh.lookAt(playerMesh.position.x, enemy.mesh.position.y, playerMesh.position.z);
+
+                    if (dist < 25 && now - enemy.lastShot > 1500) { // 1.5 second cooldown
+                        enemy.lastShot = now;
+
+                        // Audio
+                        const eSound = enemySound.cloneNode();
+                        eSound.volume = 0.3;
+                        eSound.play().catch(e=>{});
+
+                        // Visual tracer
+                        const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+                        const points = [
+                            new THREE.Vector3(enemy.mesh.position.x, enemy.mesh.position.y + 1, enemy.mesh.position.z),
+                            new THREE.Vector3(playerMesh.position.x, playerMesh.position.y, playerMesh.position.z)
+                        ];
+                        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                        const line = new THREE.Line(geometry, material);
+                        scene.add(line);
+                        setTimeout(() => { scene.remove(line); }, 100);
+
+                        // Damage player
+                        playerHealth -= 10;
+                        const hd = document.getElementById('health-display');
+                        if (hd) hd.innerText = Math.max(0, playerHealth);
+                        if (playerHealth <= 0) {
+                            respawn('death');
+                        }
+                    }
+                }
+            }
+
+            // Memory cleanup logic
+            if (isPlayerLoaded) {
+                // Periodically clean up stuff far behind
+                if (Math.random() < 0.05) {
+                    const limitZ = playerMesh.position.z + 40; // Since Z goes negative
+                    for (let i = platforms.length - 1; i >= 0; i--) {
+                        if (platforms[i].mesh.position.z > limitZ && platforms[i].stage < currentStage - 1) {
+                            const p = platforms[i];
+                            scene.remove(p.mesh);
+                            if(p.mesh.geometry) p.mesh.geometry.dispose();
+                            if(p.mesh.material) p.mesh.material.dispose();
+                            platforms.splice(i, 1);
+                        }
+                    }
+                    for (let i = enemies.length - 1; i >= 0; i--) {
+                        if (enemies[i].mesh.position.z > limitZ && enemies[i].stage < currentStage - 1) {
+                            scene.remove(enemies[i].mesh);
+                            // DO NOT dispose geometry/material here to preserve SkeletonUtils clone template
+                            enemies.splice(i, 1);
+                        }
+                    }
+                }
+            }
 
             // Check if player is loaded
             if (!isLocked && isPlayerLoaded) {
