@@ -126,6 +126,7 @@
 
 
     <!-- SOUND EFFECTS -->
+    <audio id="sfx-akm" src="akm.mp3"></audio>
     <audio id="sfx-jump" src="jump.mp3"></audio>
     <audio id="sfx-check" src="checkpoint.wav"></audio>
     <audio id="sfx-death" src="death.mp3"></audio>
@@ -136,6 +137,7 @@
     <!-- Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 
 
     <script>
@@ -150,7 +152,13 @@
         
         // --- Global Variables ---
         let camera, scene, renderer;
-        let playerMesh; // Player Group (root of the character)
+        let playerMesh;
+        let weaponMesh = null;
+        let enemyModel = null;
+        let activeEnemies = [];
+        let raycaster = new THREE.Raycaster();
+        let lastShootTime = 0;
+        let muzzleLight = null; // Player Group (root of the character)
         let platforms = [];
         let clock; 
         let isPlayerLoaded = false; // Kept for consistency, but will be set true immediately
@@ -201,6 +209,7 @@
         const sfxDeath = document.getElementById('sfx-death');
         const sfxFire = document.getElementById('sfx-fire');
         const sfxWalk = document.getElementById('sfx-walk');
+        const sfxAkm = document.getElementById('sfx-akm');
         
         if(sfxWalk) sfxWalk.volume = 0.4; 
 
@@ -321,6 +330,7 @@
                     const d = 3 + Math.random() * 3;
                     curZ -= d/2;
                     createPlatform(curX, curY, curZ, w, 1, d, stageColor);
+                    if (Math.random() < 0.5) spawnEnemy(curX, curY + 0.5, curZ);
                     curZ -= d/2;
                 } 
                 else if (r < 0.5) {
@@ -346,6 +356,7 @@
                         curX += (Math.random() - 0.5) * 5; 
                         curY += (Math.random() - 0.3) * 1.5; 
                         createPlatform(curX, curY, curZ, 2, 1, 2, stageColor);
+                        if (s === steps - 1 && Math.random() < 0.5) spawnEnemy(curX, curY + 0.5, curZ);
                     }
                 }
             }
@@ -362,6 +373,21 @@
 
 
             nextStageStart.set(curX, curY, curZ - 6);
+        }
+
+
+        function spawnEnemy(x, y, z) {
+            if (!enemyModel) return;
+            const enemy = THREE.SkeletonUtils.clone(enemyModel);
+            enemy.position.set(x, y + 0.9, z); // Adjust Y based on enemy scale/origin
+            enemy.traverse(child => { if(child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+
+            // Add a bounding box for collision (using user data)
+            const box = new THREE.Box3().setFromObject(enemy);
+            enemy.userData = { isEnemy: true, boundingBox: box };
+
+            scene.add(enemy);
+            activeEnemies.push(enemy);
         }
 
         // Helper function to update camera position based on player position and Euler angle
@@ -401,6 +427,7 @@
 
             // 2. Camera (FOV 85)
             camera = new THREE.PerspectiveCamera(85, window.innerWidth / window.innerHeight, 0.1, 1000);
+            scene.add(camera);
             
             // 3. Renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -448,7 +475,76 @@
                 document.body.requestPointerLock();
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
+
+            document.addEventListener('mousedown', (e) => {
+                if (!isLocked || !weaponMesh) return;
+
+                const now = Date.now();
+                if (now - lastShootTime < 200) return; // Fire rate limit
+                lastShootTime = now;
+
+                // Muzzle flash
+                if (muzzleLight) {
+                    muzzleLight.intensity = 2;
+                    setTimeout(() => muzzleLight.intensity = 0, 50);
+                }
+
+                // Recoil
+                weaponMesh.position.z += 0.05;
+                setTimeout(() => { weaponMesh.position.z -= 0.05; }, 80);
+
+                // SFX
+                if(sfxAkm) {
+                    sfxAkm.currentTime = 0;
+                    sfxAkm.play().catch(e => {});
+                }
+
+                // Raycast
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                const intersects = raycaster.intersectObjects(activeEnemies, true);
+
+                if (intersects.length > 0) {
+                    let hit = intersects[0].object;
+                    let enemyGroup = null;
+                    while(hit) {
+                        if (hit.userData && hit.userData.isEnemy) {
+                            enemyGroup = hit;
+                            break;
+                        }
+                        hit = hit.parent;
+                    }
+
+                    if (enemyGroup) {
+                        scene.remove(enemyGroup);
+                        activeEnemies = activeEnemies.filter(e => e !== enemyGroup);
+                    }
+                }
+            });
+
             document.addEventListener('mousemove', onMouseMove);
+
+
+            // 8. Load Models
+            const loader = new THREE.GLTFLoader();
+            loader.load('akm.glb', (gltf) => {
+                weaponMesh = gltf.scene;
+                weaponMesh.scale.set(0.1, 0.1, 0.1);
+                weaponMesh.position.set(0.25, -0.4, -0.6); // Relative to camera
+                weaponMesh.rotation.y = Math.PI / 2;
+
+                // Add muzzle light
+                muzzleLight = new THREE.PointLight(0xffff00, 0, 5);
+                muzzleLight.position.set(0, 0.2, -1);
+                weaponMesh.add(muzzleLight);
+
+                camera.add(weaponMesh);
+            });
+
+            loader.load('enemy.glb', (gltf) => {
+                enemyModel = gltf.scene;
+                enemyModel.scale.set(0.06, 0.06, 0.06);
+            });
+
 
             // --- Camera Snap Fix ---
             updateCameraPosition();
@@ -775,6 +871,23 @@
         function triggerCheckpoint(p) {
             if(!p.triggered) {
                 p.triggered = true;
+
+
+                // Clean up old platforms and enemies to prevent memory leak
+                const oldPlatforms = platforms;
+                platforms = [];
+                oldPlatforms.forEach(oldP => {
+                    if (oldP !== p) {
+                        scene.remove(oldP.mesh);
+                    } else {
+                        platforms.push(oldP); // keep current checkpoint
+                    }
+                });
+
+                activeEnemies.forEach(e => scene.remove(e));
+                activeEnemies = [];
+
+
                 spawnPoint.set(p.mesh.position.x, p.mesh.position.y + 0.5 + 2, p.mesh.position.z);
                 generateRandomStage();
                 currentStage++;
@@ -884,6 +997,26 @@
 
             checkPhysics(dt);
             updateAnimation(time);
+
+            // Enemy collision and bounding box update
+            const playerPos = playerMesh.position;
+            const playerRadius = 0.5; // Approx
+            for (let i = 0; i < activeEnemies.length; i++) {
+                const enemy = activeEnemies[i];
+                enemy.userData.boundingBox.setFromObject(enemy);
+
+                // Simple distance check
+                const dx = playerPos.x - enemy.position.x;
+                const dy = playerPos.y - enemy.position.y;
+                const dz = playerPos.z - enemy.position.z;
+                const distSq = dx*dx + dy*dy + dz*dz;
+
+                if (distSq < 1.5) { // 1.5 units squared
+                    respawn('death');
+                    break; // Prevent multiple triggers
+                }
+            }
+
 
 
             // Ensure camera update runs every frame during the active game loop
