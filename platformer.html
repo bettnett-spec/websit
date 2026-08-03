@@ -872,21 +872,32 @@
             if(!p.triggered) {
                 p.triggered = true;
 
-
                 // Clean up old platforms and enemies to prevent memory leak
                 const oldPlatforms = platforms;
                 platforms = [];
                 oldPlatforms.forEach(oldP => {
                     if (oldP !== p) {
-                        scene.remove(oldP.mesh);
+                        if (oldP.mesh) {
+                            scene.remove(oldP.mesh);
+                            if (oldP.mesh.geometry) oldP.mesh.geometry.dispose();
+                            if (oldP.mesh.material) {
+                                if (Array.isArray(oldP.mesh.material)) {
+                                    oldP.mesh.material.forEach(m => m.dispose());
+                                } else {
+                                    oldP.mesh.material.dispose();
+                                }
+                            }
+                        }
                     } else {
                         platforms.push(oldP); // keep current checkpoint
                     }
                 });
 
-                activeEnemies.forEach(e => scene.remove(e));
+                activeEnemies.forEach(e => {
+                    scene.remove(e);
+                    // Do not dispose of shared enemy geometry/materials
+                });
                 activeEnemies = [];
-
 
                 spawnPoint.set(p.mesh.position.x, p.mesh.position.y + 0.5 + 2, p.mesh.position.z);
                 generateRandomStage();
