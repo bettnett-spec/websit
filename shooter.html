@@ -620,8 +620,7 @@
             body.addShape(shape);
             
             // Move to holding area
-            body.position.set(0, -50, 0);
-            world.addBody(body);
+            // world.addBody(body); // Do not add to world initially
             
             enemyBodies.push({ 
                 mesh: enemyContainer, 
@@ -715,6 +714,7 @@
         enemy.body.position.set(pos.x, pos.y, pos.z);
         enemy.body.velocity.set(0,0,0);
         enemy.body.wakeUp();
+        if (!world.bodies.includes(enemy.body)) world.addBody(enemy.body);
         enemy.spawnTime = Date.now();
         enemy.isBackingUp = false;
     }
@@ -750,7 +750,7 @@
         enemyBodies.forEach(e => {
             e.mesh.visible = false;
             e.deadUntil = Date.now() + Math.random() * 2000;
-            e.body.position.set(0, -50, 0);
+            world.removeBody(e.body);
             e.body.velocity.set(0, 0, 0);
         });
     }
@@ -890,7 +890,7 @@
                 // Kill Enemy
                 enemy.mesh.visible = false;
                 enemy.deadUntil = Date.now() + 5000; // 5 seconds respawn delay
-                enemy.body.position.set(0, -50, 0); 
+                world.removeBody(enemy.body);
                 
                 // Play Ding Sound
                 playDingSound();
@@ -1170,7 +1170,7 @@
                  if (e.body.position.y < -30) {
                      e.mesh.visible = false;
                      e.deadUntil = 0; // Respawn immediately
-                     e.body.position.set(0, -50, 0);
+                     world.removeBody(e.body);
                      e.body.velocity.set(0, 0, 0);
                      return;
                  }
