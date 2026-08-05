@@ -126,6 +126,7 @@
 
 
     <!-- SOUND EFFECTS -->
+    <audio id="sfx-ding" src="ding.mp3"></audio>
     <audio id="sfx-akm" src="akm.mp3"></audio>
     <audio id="sfx-jump" src="jump.mp3"></audio>
     <audio id="sfx-check" src="checkpoint.wav"></audio>
@@ -210,6 +211,7 @@
         const sfxFire = document.getElementById('sfx-fire');
         const sfxWalk = document.getElementById('sfx-walk');
         const sfxAkm = document.getElementById('sfx-akm');
+        const sfxDing = document.getElementById('sfx-ding');
         
         if(sfxWalk) sfxWalk.volume = 0.4; 
 
@@ -517,6 +519,10 @@
                     if (enemyGroup) {
                         scene.remove(enemyGroup);
                         activeEnemies = activeEnemies.filter(e => e !== enemyGroup);
+                        if(sfxDing) {
+                            sfxDing.currentTime = 0;
+                            sfxDing.play().catch(e => {});
+                        }
                     }
                 }
             });
@@ -873,19 +879,32 @@
                 p.triggered = true;
 
 
+
                 // Clean up old platforms and enemies to prevent memory leak
                 const oldPlatforms = platforms;
                 platforms = [];
                 oldPlatforms.forEach(oldP => {
                     if (oldP !== p) {
                         scene.remove(oldP.mesh);
+                        if (oldP.mesh.geometry) oldP.mesh.geometry.dispose();
+                        if (oldP.mesh.material) {
+                            if (Array.isArray(oldP.mesh.material)) {
+                                oldP.mesh.material.forEach(m => m.dispose());
+                            } else {
+                                oldP.mesh.material.dispose();
+                            }
+                        }
                     } else {
                         platforms.push(oldP); // keep current checkpoint
                     }
                 });
 
-                activeEnemies.forEach(e => scene.remove(e));
+                activeEnemies.forEach(e => {
+                    scene.remove(e);
+                    // Do not dispose geometries/materials of SkeletonUtils cloned enemies as they share resources
+                });
                 activeEnemies = [];
+
 
 
                 spawnPoint.set(p.mesh.position.x, p.mesh.position.y + 0.5 + 2, p.mesh.position.z);
