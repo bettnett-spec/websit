@@ -132,6 +132,8 @@
     <audio id="sfx-death" src="death.mp3"></audio>
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
+    <audio id="sfx-wind" src="wind.mp3" loop autoplay></audio>
+    <audio id="sfx-ding" src="ding.mp3"></audio>
 
 
     <!-- Three.js from CDN -->
@@ -209,9 +211,13 @@
         const sfxDeath = document.getElementById('sfx-death');
         const sfxFire = document.getElementById('sfx-fire');
         const sfxWalk = document.getElementById('sfx-walk');
+        const sfxWind = document.getElementById('sfx-wind');
+        const sfxDing = document.getElementById('sfx-ding');
         const sfxAkm = document.getElementById('sfx-akm');
         
-        if(sfxWalk) sfxWalk.volume = 0.4; 
+        if(sfxWalk) sfxWalk.volume = 0.4;
+        if(sfxWind) sfxWind.volume = 0.3;
+        if(sfxDing) sfxDing.volume = 0.6;
 
         // Radio System
         const radioTracks = [
@@ -473,6 +479,7 @@
                 }
                 
                 document.body.requestPointerLock();
+                if (sfxWind && sfxWind.paused) { sfxWind.play().catch(e => {}); }
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
 
@@ -517,6 +524,7 @@
                     if (enemyGroup) {
                         scene.remove(enemyGroup);
                         activeEnemies = activeEnemies.filter(e => e !== enemyGroup);
+                        if (sfxDing) { sfxDing.currentTime = 0; sfxDing.play().catch(e => {}); }
                     }
                 }
             });
@@ -877,9 +885,21 @@
                 const oldPlatforms = platforms;
                 platforms = [];
                 oldPlatforms.forEach(oldP => {
+
                     if (oldP !== p) {
                         scene.remove(oldP.mesh);
+                        if (oldP.mesh.geometry) {
+                            oldP.mesh.geometry.dispose();
+                        }
+                        if (oldP.mesh.material) {
+                            if (Array.isArray(oldP.mesh.material)) {
+                                oldP.mesh.material.forEach(m => m.dispose());
+                            } else {
+                                oldP.mesh.material.dispose();
+                            }
+                        }
                     } else {
+
                         platforms.push(oldP); // keep current checkpoint
                     }
                 });
