@@ -132,6 +132,7 @@
     <audio id="sfx-death" src="death.mp3"></audio>
     <audio id="sfx-fire" src="firedeath.mp3"></audio>
     <audio id="sfx-walk" src="walk.mp3" loop></audio>
+    <audio id="sfx-wind" src="wind.mp3" loop></audio>
 
 
     <!-- Three.js from CDN -->
@@ -155,6 +156,7 @@
         let playerMesh;
         let weaponMesh = null;
         let enemyModel = null;
+        let astolfoModel = null;
         let activeEnemies = [];
         let raycaster = new THREE.Raycaster();
         let lastShootTime = 0;
@@ -209,9 +211,11 @@
         const sfxDeath = document.getElementById('sfx-death');
         const sfxFire = document.getElementById('sfx-fire');
         const sfxWalk = document.getElementById('sfx-walk');
+        const sfxWind = document.getElementById('sfx-wind');
         const sfxAkm = document.getElementById('sfx-akm');
         
-        if(sfxWalk) sfxWalk.volume = 0.4; 
+        if(sfxWalk) sfxWalk.volume = 0.4;
+        if(sfxWind) sfxWind.volume = 0.5;
 
         // Radio System
         const radioTracks = [
@@ -365,11 +369,20 @@
             curZ -= 4;
             createPlatform(curX, curY, curZ - 3, 8, 1, 6, 0x00FF00, 'checkpoint');
             
-            const geo = new THREE.CylinderGeometry(0.5, 0.5, 5);
-            const mat = new THREE.MeshBasicMaterial({color: 0xffff00});
-            const pole = new THREE.Mesh(geo, mat);
-            pole.position.set(curX + 3, curY + 2.5, curZ - 3);
-            scene.add(pole);
+            if (astolfoModel) {
+                const statue = THREE.SkeletonUtils.clone(astolfoModel);
+                statue.position.set(curX + 3, curY + 0.5, curZ - 3);
+                statue.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+                scene.add(statue);
+                platforms.push({ mesh: statue, isStatue: true });
+            } else {
+                const geo = new THREE.CylinderGeometry(0.5, 0.5, 5);
+                const mat = new THREE.MeshBasicMaterial({color: 0xffff00});
+                const pole = new THREE.Mesh(geo, mat);
+                pole.position.set(curX + 3, curY + 2.5, curZ - 3);
+                scene.add(pole);
+                platforms.push({ mesh: pole, isStatue: true });
+            }
 
 
             nextStageStart.set(curX, curY, curZ - 6);
@@ -471,7 +484,9 @@
                         sfxJump.currentTime = 0;
                     }).catch(e => { /* Audio playback error handling */ });
                 }
-                
+                if (sfxWind && sfxWind.paused) {
+                    sfxWind.play().catch(e => {});
+                }
                 document.body.requestPointerLock();
             });
             document.addEventListener('pointerlockchange', pointerLockChange);
@@ -543,6 +558,11 @@
             loader.load('enemy.glb', (gltf) => {
                 enemyModel = gltf.scene;
                 enemyModel.scale.set(0.06, 0.06, 0.06);
+            });
+
+            loader.load('astolfo_school_uniform.glb', (gltf) => {
+                astolfoModel = gltf.scene;
+                astolfoModel.scale.set(2, 2, 2);
             });
 
 
