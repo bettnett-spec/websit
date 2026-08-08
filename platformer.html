@@ -464,7 +464,8 @@
             document.addEventListener('wheel', onScroll); 
             window.addEventListener('resize', onWindowResize);
             
-            instructions.addEventListener('click', function() {
+            instructions.addEventListener('mousedown', function(e) {
+                e.preventDefault();
                 if(sfxJump) { 
                     sfxJump.play().then(() => {
                         sfxJump.pause();
